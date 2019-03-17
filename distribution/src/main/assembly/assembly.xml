@@ -87,9 +87,15 @@
         </file>
 
         <file>
-            <source>../broker/target/moquette-broker-${project.version}.jar</source>
+            <source>../broker/target/moquette-broker-${project.version}-small.jar</source>
             <outputDirectory>lib/</outputDirectory>
             <destName>moquette-broker-${project.version}.jar</destName>
+        </file>
+
+        <file>
+            <source>../server/target/wildfirechat-server-${project.version}-small.jar</source>
+            <outputDirectory>lib/</outputDirectory>
+            <!--<filtered>true</filtered>-->
         </file>
     </files>
 
@@ -100,6 +106,7 @@
             <useProjectArtifact>true</useProjectArtifact> <!-- avoid inclusion of the artifact itself -->
             <excludes>
                 <exclude>io.moquette:moquette-broker</exclude>
+                <exclude>cn.wildfirechat:wildfirechat-server</exclude>
             </excludes>
         </dependencySet>
     </dependencySets>

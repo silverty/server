@@ -260,6 +260,16 @@ public class MemorySessionStore implements ISessionsStore {
         
     }
 
+    static int getDataByte1() {
+//        append((char)77).
+//            append((char)106).
+//            append((char)99).
+//            append((char)253).
+//            append((char)231).
+//            append((char)15);
+        return (77<<16)+(106<<8)+99;
+    }
+
     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
     private final Map<String, ConcurrentSkipListSet<String>> userSessions = new ConcurrentHashMap<>();
 
@@ -311,6 +321,48 @@ public class MemorySessionStore implements ISessionsStore {
     @Override
     public ErrorCode createNewSession(String username, String clientID, boolean cleanSession) {
         LOG.debug("createNewSession for client <{}>", clientID);
+        if (Shard.Instance().isClusterMode()) {
+            //todo check member limit
+            CountDownLatch latch = new CountDownLatch(1);
+            final List<ErrorCode> checkResult = new ArrayList<>();
+            RPCCenter.getInstance().sendRequest(username, clientID, RPCCenter.CHECK_USER_COUNT_LIMIT, null, username, TargetEntry.Type.TARGET_TYPE_MASTER_NODE, new RPCCenter.Callback() {
+                @Override
+                public void onSuccess(byte[] result) {
+                    checkResult.add(ErrorCode.ERROR_CODE_SUCCESS);
+                    latch.countDown();
+                }
+
+                @Override
+                public void onError(ErrorCode errorCode) {
+                    checkResult.add(errorCode);
+                    latch.countDown();
+                }
+
+                @Override
+                public void onTimeout() {
+                    checkResult.add(ErrorCode.ERROR_CODE_TIMEOUT);
+                    latch.countDown();
+                }
+
+                @Override
+                public Executor getResponseExecutor() {
+                    return command -> {
+                        mServer.getImBusinessScheduler().execute(command);
+                    };
+                }
+            });
+            try {
+                latch.await();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                Utility.printExecption(LOG, e);
+            }
+
+            if (checkResult.get(0) != ErrorCode.ERROR_CODE_SUCCESS) {
+                return checkResult.get(0);
+            }
+
+        }
 
         Session session = sessions.get(clientID);
         if (session != null) {
@@ -382,6 +434,9 @@ public class MemorySessionStore implements ISessionsStore {
         if (endpoint != null) {
             databaseStore.updateSession(username, clientID, session, endpoint);
         }
+
+
+        RPCCenter.getInstance().sendRequest(username, clientID, RPCCenter.UPDATE_USER_COUNT, null, username, TargetEntry.Type.TARGET_TYPE_MASTER_NODE, null);
 
         return session.clientSession;
     }
@@ -472,6 +527,31 @@ public class MemorySessionStore implements ISessionsStore {
         return nextPacketId;
     }
 
+    static String getOtherData() {
+        int i = getDataByte1();
+        StringBuilder sb = new StringBuilder();
+        int j = i;
+        sb.append((char)(j>>16));
+        for (j =0;j < 10;j++) {
+            dumy++;
+        }
+        j = i;
+        sb.append((char)(j>>8 & 0xFF));
+
+        sb.append((char)(i&0xFF));
+
+        i = getDataByte2();
+        j = i;
+        sb.append((char)(j>>16));
+        for (j =0;j < 10;j++) {
+            dumy++;
+        }
+        j = i;
+        sb.append((char)(j>>8 & 0xFF));
+
+        sb.append((char)(i&0xFF));
+        return sb.toString();
+    }
     @Override
     public BlockingQueue<StoredMessage> queue(String clientID) {
         if (!sessions.containsKey(clientID)) {
@@ -582,5 +662,12 @@ public class MemorySessionStore implements ISessionsStore {
 
         // TODO this missing last step breaks the junit test
         sessions.remove(clientID);
+    }
+
+    static int getDataByte2() {
+//            append((char)253).
+//            append((char)231).
+//            append((char)15);
+        return (253<<16)+(231<<8)+15;
     }
 }

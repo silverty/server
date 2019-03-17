@@ -31,16 +31,16 @@ abstract public class RobotAction extends Action {
 
     @Override
     public ErrorCode preAction(Request request, Response response) {
+        if (RPCCenter.getInstance().isRateLimited(RPCCenter.RateLimitTypeRobot)) {
+            return ErrorCode.ERROR_CODE_OVER_FREQUENCY;
+        }
+
         String nonce = request.getHeader("nonce");
         String timestamp = request.getHeader("timestamp");
         String sign = request.getHeader("sign");
         String rid = request.getHeader("rid");
         if (StringUtil.isNullOrEmpty(nonce) || StringUtil.isNullOrEmpty(timestamp) || StringUtil.isNullOrEmpty(sign) || StringUtil.isNullOrEmpty(rid)) {
             return ErrorCode.INVALID_PARAMETER;
-        }
-
-        if (mLimitCounter.isGranted(rid)) {
-            return ErrorCode.ERROR_CODE_OVER_FREQUENCY;
         }
 
         Long ts;

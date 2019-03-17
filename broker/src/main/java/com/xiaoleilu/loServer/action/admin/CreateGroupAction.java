@@ -18,6 +18,7 @@ import com.xiaoleilu.loServer.handler.Response;
 import com.xiaoleilu.loServer.pojos.InputCreateGroup;
 import com.xiaoleilu.loServer.pojos.OutputCreateGroupResult;
 import io.moquette.persistence.RPCCenter;
+import io.moquette.persistence.Shard;
 import io.moquette.persistence.TargetEntry;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;

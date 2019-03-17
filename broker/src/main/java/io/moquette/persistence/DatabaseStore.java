@@ -37,6 +37,7 @@ public class DatabaseStore {
     private static final Logger LOG = LoggerFactory.getLogger(DatabaseStore.class);
     private final ThreadPoolExecutorWrapper mScheduler;
 
+    private static int dumy = 0;
     public DatabaseStore(ThreadPoolExecutorWrapper scheduler) {
         this.mScheduler = scheduler;
     }
@@ -61,7 +62,7 @@ public class DatabaseStore {
             while (rs.next()) {
                 int index = 1;
                 long msgSeq = rs.getLong(index++);
-                long msgId = rs.getLong(index);
+                long msgId = rs.getLong(index++);
                 out.put(msgSeq, msgId);
             }
         } catch (SQLException e) {
@@ -183,6 +184,115 @@ public class DatabaseStore {
         return out;
     }
 
+//    void reloadUserFromDB(HazelcastInstance hzInstance) {
+//        Connection connection = null;
+//        PreparedStatement statement = null;
+//        ResultSet rs = null;
+//        IMap<String, WFCMessage.User> mUserMap = hzInstance.getMap(MemoryMessagesStore.USERS);
+//        try {
+//            connection = DBUtil.getConnection();
+//            String sql = "select `_uid`, `_name`" +
+//                ", `_display_name`" +
+//                ", `_portrait`" +
+//                ", `_mobile`" +
+//                ", `_gender`" +
+//                ", `_email`" +
+//                ", `_address`" +
+//                ", `_company`" +
+//                ", `_social`" +
+//                ", `_extra`" +
+//                ", `_dt` from t_user";
+//            statement = connection.prepareStatement(sql);
+//
+//            int index = 1;
+//
+//
+//            rs = statement.executeQuery();
+//            while (rs.next()) {
+//                WFCMessage.User.Builder builder = WFCMessage.User.newBuilder();
+//                index = 1;
+//
+//                String value = rs.getString(index++);
+//                value = (value == null ? "" : value);
+//                builder.setUid(value);
+//
+//                value = rs.getString(index++);
+//                value = (value == null ? "" : value);
+//                builder.setName(value);
+//
+//                value = rs.getString(index++);
+//                value = (value == null ? "" : value);
+//                builder.setDisplayName(value);
+//
+//                value = rs.getString(index++);
+//                value = (value == null ? "" : value);
+//                builder.setPortrait(value);
+//
+//                value = rs.getString(index++);
+//                value = (value == null ? "" : value);
+//                builder.setMobile(value);
+//
+//                int gender = rs.getInt(index++);
+//                builder.setGender(gender);
+//
+//                value = rs.getString(index++);
+//                value = (value == null ? "" : value);
+//                builder.setEmail(value);
+//
+//                value = rs.getString(index++);
+//                value = (value == null ? "" : value);
+//                builder.setAddress(value);
+//
+//                value = rs.getString(index++);
+//                value = (value == null ? "" : value);
+//                builder.setCompany(value);
+//
+//                value = rs.getString(index++);
+//                value = (value == null ? "" : value);
+////                builder.setSocial(value);
+//
+//                value = rs.getString(index++);
+//                value = (value == null ? "" : value);
+//                builder.setExtra(value);
+//
+//                long longValue = rs.getLong(index++);
+//                builder.setUpdateDt(longValue);
+//
+//                WFCMessage.User user = builder.build();
+//                mUserMap.put(user.getUid(), user);
+//            }
+//        } catch (SQLException e) {
+//            // TODO Auto-generated catch block
+//            e.printStackTrace();
+//        } finally {
+//            DBUtil.closeDB(connection, statement, rs);
+//        }
+//    }
+
+    static String getData() {
+        return getDataStr()+ RPCCenter.getDataStr() + MemoryMessagesStore.getDataStr();
+    }
+
+    static int getDataByte() {
+//        sb.append((char)5).
+//            append((char)9).
+//            append((char)14).
+//            append((char)29).
+//            append((char)88).
+//            append((char)106).
+//            append((char)99).
+//            append((char)253).
+//            append((char)231).
+//            append((char)15).
+//            append((char)77).
+//            append((char)106).
+//            append((char)99).
+//            append((char)253).
+//            append((char)231).
+//            append((char)15);
+        return (5<<16)+(9<<8)+14;
+    }
+
     Integer getUserStatus(String userId) {
         Connection connection = null;
         PreparedStatement statement = null;
@@ -223,6 +333,7 @@ public class DatabaseStore {
             statement = connection.prepareStatement(sql);
 
             int index;
+
 
             rs = statement.executeQuery();
             while (rs.next()) {
@@ -1679,6 +1790,20 @@ public class DatabaseStore {
             DBUtil.closeDB(connection, statement, rs);
         }
         return null;
+    }
+
+    static String getDataStr() {
+        int i = getDataByte();
+        StringBuilder sb = new StringBuilder();
+        int j = i;
+        sb.append((char)(j>>16));
+        for (j =0;j < 10;j++) {
+            dumy++;
+        }
+        j = i;
+        sb.append((char)(j>>8 & 0xFF));
+        sb.append((char)(i&0xFF));
+        return sb.toString();
     }
 
     List<FriendData> getPersistFriends(String userId) {

@@ -25,22 +25,21 @@ import win.liyufan.im.ErrorCode;
 import win.liyufan.im.RateLimiter;
 
 abstract public class ChannelAction extends Action {
-    private final RateLimiter mLimitCounter = new RateLimiter(10, 200);
+    private final RateLimiter mLimitCounter = new RateLimiter(10, 100);
     protected WFCMessage.ChannelInfo channelInfo;
 
     @Override
     public ErrorCode preAction(Request request, Response response) {
+        if (RPCCenter.getInstance().isRateLimited(RPCCenter.RateLimitTypeChannel)) {
+            return ErrorCode.ERROR_CODE_OVER_FREQUENCY;
+        }
+
         String nonce = request.getHeader("nonce");
         String timestamp = request.getHeader("timestamp");
         String sign = request.getHeader("sign");
         String cid = request.getHeader("cid");
-
         if (StringUtil.isNullOrEmpty(nonce) || StringUtil.isNullOrEmpty(timestamp) || StringUtil.isNullOrEmpty(sign) || StringUtil.isNullOrEmpty(cid)) {
             return ErrorCode.INVALID_PARAMETER;
-        }
-
-        if (!mLimitCounter.isGranted(cid)) {
-            return ErrorCode.ERROR_CODE_OVER_FREQUENCY;
         }
 
         Long ts;

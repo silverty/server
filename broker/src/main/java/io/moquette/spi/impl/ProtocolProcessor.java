@@ -17,7 +17,13 @@
 package io.moquette.spi.impl;
 
 import cn.wildfirechat.proto.WFCMessage;
+import com.hazelcast.core.Member;
+import io.moquette.BrokerConstants;
 import io.moquette.persistence.RPCCenter;
+import io.moquette.persistence.Shard;
+import io.moquette.interception.HazelcastIMNotifyMsg;
+import io.moquette.interception.HazelcastNotifyMsg;
+import io.moquette.interception.HazelcastRecallNotifyMsg;
 import io.moquette.interception.InterceptHandler;
 import io.moquette.interception.messages.InterceptAcknowledgedMessage;
 import io.moquette.persistence.MemorySessionStore;
@@ -55,7 +61,22 @@ import static io.moquette.server.ConnectionDescriptor.ConnectionState.*;
  *
  * Used by the front facing class ProtocolProcessorBootstrapper.
  */
-public class ProtocolProcessor {
+public class ProtocolProcessor implements Shard.MemberChangListener {
+
+    @Override
+    public void onTargetAddedToCurrentNode(TargetEntry target) {
+        mServer.getImBusinessScheduler().execute(()->handleTargetAddedToCurrentNode(target));
+    }
+
+    @Override
+    public void onTargetRemovedFromCurrentNode(TargetEntry target) {
+        mServer.getImBusinessScheduler().execute(()->handleTargetRemovedFromCurrentNode(target));
+    }
+
+    private void handleTargetAddedToCurrentNode(TargetEntry target) {
+
+    }
+
     private void handleTargetRemovedFromCurrentNode(TargetEntry target) {
         System.out.println("kickof user " + target);
         if (target.type == TargetEntry.Type.TARGET_TYPE_USER) {
@@ -75,7 +96,6 @@ public class ProtocolProcessor {
 
         }
     }
-
 
     private static final Logger LOG = LoggerFactory.getLogger(ProtocolProcessor.class);
 
@@ -167,6 +187,19 @@ public class ProtocolProcessor {
             return;
         }
         if (!mServer.m_initialized) {
+            channel.close();
+            return;
+        }
+
+        Member member = Shard.Instance().getMember(msg.payload().userName(), TargetEntry.Type.TARGET_TYPE_USER);
+        if (!Shard.Instance().isCurrentNode(member)) {
+            int longPort = Integer.parseInt(member.getStringAttribute(BrokerConstants.HZ_Cluster_Node_External_Long_Port));
+            int shortPort = Integer.parseInt(member.getStringAttribute(BrokerConstants.HZ_Cluster_Node_External_Short_Port));
+            int port = (longPort << 16) + shortPort;
+            WFCMessage.ConnectAckPayload ackPayload = WFCMessage.ConnectAckPayload.newBuilder().setNodeAddr(member.getStringAttribute(BrokerConstants.HZ_Cluster_Node_External_IP)).setNodePort(port).build();
+            MqttConnAckMessage unexpectNode = connAck(CONNECTION_REFUSED_UNEXPECT_NODE, ackPayload.toByteArray());
+            LOG.error("unexpected node. CId={}", clientId);
+            channel.writeAndFlush(unexpectNode);
             channel.close();
             return;
         }
@@ -419,6 +452,26 @@ public class ProtocolProcessor {
         }
     }
 
+    public void internalNotifyChatroomMsg(String target, int line, long messageId) {
+        mServer.getImBusinessScheduler().execute(()->messagesPublisher.updateChatroomMembersQueue(target, line, messageId));
+    }
+
+    public void internalNotifyChatroomNotify(String user, String clientId, long messageId) {
+        mServer.getImBusinessScheduler().execute(()->messagesPublisher.publish2ChatroomReceiversDirectly(user, clientId, messageId));
+    }
+
+    public void internalNotifyMsg(HazelcastNotifyMsg notifyMsg) {
+        mServer.getImBusinessScheduler().execute(()->messagesPublisher.publishNotificationLocal(notifyMsg.getTopic(), notifyMsg.getTarget(), notifyMsg.getHead()));
+    }
+
+    public void internalNotifyMsg(HazelcastIMNotifyMsg notifyMsg) {
+        mServer.getImBusinessScheduler().execute(()->messagesPublisher.publish2Receivers(notifyMsg));
+    }
+
+    public void internalNotifyMsg(HazelcastRecallNotifyMsg notifyMsg) {
+        mServer.getImBusinessScheduler().execute(()->messagesPublisher.publishRecall2Receivers(notifyMsg));
+    }
+
     /**
      * Second phase of a publish QoS2 protocol, sent by publisher to the broker. Search the stored
      * message and publish to all interested subscribers.
@@ -607,7 +660,6 @@ public class ProtocolProcessor {
     public ISessionsStore getSessionsStore() {
         return m_sessionsStore;
     }
-
     public void onRpcMsg(String fromUser, String clientId, byte[] message, int messageId, String from, String request) {
         if(request.equals(RPCCenter.KICKOFF_USER_REQUEST)) {
             mServer.getImBusinessScheduler().execute(()->handleTargetRemovedFromCurrentNode(new TargetEntry(TargetEntry.Type.TARGET_TYPE_USER, from)));

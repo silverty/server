@@ -20,6 +20,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
 
+import io.moquette.persistence.Shard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -117,6 +118,9 @@ public class ProtocolProcessorBootstrapper {
 
         LOG.info("Initializing MQTT protocol processor...");
         m_processor.init(connectionDescriptors, messagesStore, m_sessionsStore, authenticator, authorizator, interceptor, server);
+
+        Shard.Instance().addListener(m_processor);
+
         return m_processor;
     }
 

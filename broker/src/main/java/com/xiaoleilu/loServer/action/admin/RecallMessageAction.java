@@ -17,6 +17,7 @@ import com.xiaoleilu.loServer.handler.Request;
 import com.xiaoleilu.loServer.handler.Response;
 import com.xiaoleilu.loServer.pojos.RecallMessageData;
 import io.moquette.persistence.RPCCenter;
+import io.moquette.persistence.Shard;
 import io.moquette.persistence.TargetEntry;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;

@@ -1,0 +1,26 @@
+package cn.wildfirechat.dispatch;
+
+import cn.wildfirechat.subscription.MessageEnvelope;
+import cn.wildfirechat.bus.MessagePublication;
+
+/**
+ * The enveloped dispatcher will wrap published messages in an envelope before
+ * passing them to their configured dispatcher.
+ * <p/>
+ * All enveloped message handlers will have this dispatcher in their chain
+ *
+ * @author bennidi
+ *         Date: 12/12/12
+ */
+public class EnvelopedMessageDispatcher extends DelegatingMessageDispatcher {
+
+
+    public EnvelopedMessageDispatcher(IMessageDispatcher dispatcher) {
+        super(dispatcher);
+    }
+
+    @Override
+    public void dispatch(MessagePublication publication, Object message, Iterable listeners){
+        getDelegate().dispatch(publication, new MessageEnvelope(message), listeners);
+    }
+}

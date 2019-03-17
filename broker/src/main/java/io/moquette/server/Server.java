@@ -379,12 +379,35 @@ public class Server {
         hazelcastInstance.getCluster().getLocalMember().setStringAttribute(HZ_Cluster_Node_External_Short_Port, shortPort);
         hazelcastInstance.getCluster().getLocalMember().setIntAttribute(HZ_Cluster_Node_ID, nodeId);
         hazelcastInstance.getCluster().getLocalMember().setStringAttribute(HZ_Cluster_Node_External_IP, serverIp);
+
+        RPCCenter.getInstance().decodeLicense(hazelcastInstance, serverIp, shortPort);
+        Shard.Instance().init(hazelcastInstance);
         RPCCenter.getInstance().init(this);
-        return true;
+        return RPCCenter.getInstance().checkAllowedRun(this);
     }
 
     public HazelcastInstance getHazelcastInstance() {
         return hazelcastInstance;
+    }
+
+    public void internalNotifyMsg(HazelcastNotifyMsg notifyMsg) {
+
+        if (!m_initialized) {
+            LOG.error("Moquette is not started, internal message cannot be notify");
+            return;
+        }
+        LOG.debug("internalNotifyMsg");
+        m_processor.internalNotifyMsg(notifyMsg);
+    }
+
+    public void internalNotifyMsg(HazelcastIMNotifyMsg notifyMsg) {
+
+        if (!m_initialized) {
+            LOG.error("Moquette is not started, internal message cannot be notify");
+            return;
+        }
+        LOG.debug("internalNotifyMsg");
+        m_processor.internalNotifyMsg(notifyMsg);
     }
 
     public void internalRpcMsg(String fromUser, String clientId, byte[] message, int messageId, String from, String request) {

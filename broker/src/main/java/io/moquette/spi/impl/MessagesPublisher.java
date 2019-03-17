@@ -20,10 +20,14 @@ import cn.wildfirechat.proto.ProtoConstants;
 import cn.wildfirechat.proto.WFCMessage;
 import com.google.gson.Gson;
 import com.hazelcast.core.HazelcastInstance;
+import com.hazelcast.core.Member;
 import com.hazelcast.util.StringUtil;
 import com.xiaoleilu.loServer.pojos.OutputNotifyChannelSubscribeStatus;
 import com.xiaoleilu.loServer.pojos.SendMessageData;
 import io.moquette.persistence.*;
+import io.moquette.interception.HazelcastIMNotifyMsg;
+import io.moquette.interception.HazelcastNotifyMsg;
+import io.moquette.interception.HazelcastRecallNotifyMsg;
 import io.moquette.persistence.MemorySessionStore.Session;
 import io.moquette.server.ConnectionDescriptorStore;
 import io.moquette.spi.IMessagesStore;
@@ -112,7 +116,12 @@ public class MessagesPublisher {
     }
 
     private void publish2ChatroomReceivers(String user, String clientId, long messageHead) {
-        publish2ChatroomReceiversDirectly(user, clientId, messageHead);
+        Member member = Shard.Instance().getMember(user, TargetEntry.Type.TARGET_TYPE_USER);
+        if (Shard.Instance().isCurrentNode(member)) {
+            publish2ChatroomReceiversDirectly(user, clientId, messageHead);
+        } else {
+            RPCCenter.getInstance().publishChatroomNotifyToMember(member, user, clientId, messageHead);
+        }
     }
 
     public void publish2ChatroomReceiversDirectly(String user, String clientId, long messageHead) {
@@ -152,6 +161,10 @@ public class MessagesPublisher {
             e.printStackTrace();
             Utility.printExecption(LOG, e);
         }
+    }
+
+    void publish2Receivers(HazelcastIMNotifyMsg notifyMsg) {
+        publish2Receivers(notifyMsg.getSender(), notifyMsg.getConversationType(), notifyMsg.getTarget(), notifyMsg.getLine(), notifyMsg.getMessageHead(), notifyMsg.getReceivers(), notifyMsg.getPushContent(), notifyMsg.getClientId(), notifyMsg.getPullType(), notifyMsg.getMessageContentType(), notifyMsg.getServerTime(), notifyMsg.getMentionType(), notifyMsg.getMentionTargets(), notifyMsg.getPersistFlag());
     }
 
     private void publish2Receivers(String sender, int conversationType, String target, int line, long messageHead, Collection<String> receivers, String pushContent, String exceptClientId, int pullType, int messageContentType, long serverTime, int mentionType, List<String> mentionTargets, int persistFlag) {
@@ -368,7 +381,13 @@ public class MessagesPublisher {
     }
 
     public void publishNotification(String topic, String receiver, long head) {
-        publishNotificationLocal(topic, receiver, head);
+        Member member = Shard.Instance().getMember(receiver, TargetEntry.Type.TARGET_TYPE_USER);
+        if (Shard.Instance().isCurrentNode(member)) {
+            publishNotificationLocal(topic, receiver, head);
+        } else {
+            HazelcastNotifyMsg notifyMsg = new HazelcastNotifyMsg(topic, receiver, head);
+            RPCCenter.getInstance().publishNotificationToMember(member, notifyMsg);
+        }
     }
 
     void publishNotificationLocal(String topic, String receiver, long head) {
@@ -406,6 +425,9 @@ public class MessagesPublisher {
                 }
             });
         }
+    }
+    public void publishRecall2Receivers(HazelcastRecallNotifyMsg notifyMsg) {
+        publishRecall2ReceiversLocal(notifyMsg.getMessageUid(), notifyMsg.getOperatorId(), notifyMsg.getReceivers(), notifyMsg.getClientId());
     }
 
     public void publishRecall2ReceiversLocal(long messageUid, String operatorId, Collection<String> receivers, String exceptClientId) {
@@ -445,7 +467,17 @@ public class MessagesPublisher {
     }
 
     public void publishRecall2Receivers(long messageUid, String operatorId, Set<String> receivers, String exceptClientId) {
-        publishRecall2ReceiversLocal(messageUid, operatorId, receivers, exceptClientId);
+        Map<Member, Collection<String>> memberCollectionMap = Shard.Instance().getMemberLocation(receivers, TargetEntry.Type.TARGET_TYPE_USER);
+
+        for (Member member : memberCollectionMap.keySet()) {
+            if (Shard.Instance().isCurrentNode(member)) {
+                publishRecall2ReceiversLocal(messageUid, operatorId, memberCollectionMap.get(member), exceptClientId);
+            } else {
+                HazelcastRecallNotifyMsg notifyMsg = new HazelcastRecallNotifyMsg(messageUid, operatorId,
+                    memberCollectionMap.get(member),exceptClientId);
+                RPCCenter.getInstance().publishRecallMsgToMember(member, notifyMsg);
+            }
+        }
     }
 
     public void publish2Receivers(WFCMessage.Message message, Set<String> receivers, String exceptClientId, int pullType) {
@@ -479,12 +511,24 @@ public class MessagesPublisher {
             pushContent = null;
         }
 
-        publish2Receivers(message.getFromUser(),
+        Map<Member, Collection<String>> memberCollectionMap = Shard.Instance().getMemberLocation(receivers, TargetEntry.Type.TARGET_TYPE_USER);
+
+        for (Member member : memberCollectionMap.keySet()) {
+            if (Shard.Instance().isCurrentNode(member)) {
+                publish2Receivers(message.getFromUser(),
                     message.getConversation().getType(), message.getConversation().getTarget(), message.getConversation().getLine(),
                     messageId,
-                    receivers,
+                    memberCollectionMap.get(member),
                     pushContent, exceptClientId, pullType, message.getContent().getType(), message.getServerTimestamp(), message.getContent().getMentionedType(), message.getContent().getMentionedTargetList(), message.getContent().getPersistFlag());
-
+            } else {
+                HazelcastIMNotifyMsg notifyMsg = new HazelcastIMNotifyMsg(message.getFromUser(),
+                    message.getConversation().getType(), message.getConversation().getTarget(), message.getConversation().getLine(),
+                    messageId,
+                    memberCollectionMap.get(member),
+                    pushContent, exceptClientId, pullType, message.getContent().getType(), message.getServerTimestamp(), message.getContent().getMentionedType(), message.getContent().getMentionedTargetList(), message.getContent().getPersistFlag());
+                RPCCenter.getInstance().publishMsgToMember(member, notifyMsg);
+            }
+        }
     }
 
     public void forwardMessage(final WFCMessage.Message message, String forwardUrl) {

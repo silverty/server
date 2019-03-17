@@ -79,31 +79,13 @@ SET GLOBAL max_connections = 2000; 设置最大连接数
 ### 13. c3p0连接池
 修改最大连接数，注意需要确保DB能撑得起集群的最大连接数
 
-### 14. 示例
-mysqld.cnf配置
-```
-[mysqld]
-    # Uncomment the following if you are using InnoDB tables
-    #innodb_data_home_dir = /usr/local/mysql/data
-    #innodb_data_file_path = ibdata1:10M:autoextend
-    #innodb_log_group_home_dir = /usr/local/mysql/data
-    # You can set .._buffer_pool_size up to 50 - 80 %
-    # of RAM but beware of setting memory usage too high
-    innodb_buffer_pool_size = 2G
-    # Set .._log_file_size to 25 % of buffer pool size
-    innodb_log_file_size = 512M
-    innodb_log_buffer_size = 64M
-    innodb_flush_log_at_trx_commit = 2
-    innodb_flush_method=O_DIRECT
-    #innodb_lock_wait_timeout = 50
-```
 
-> 以上信息来源于
+>> 以上信息来源于
 
-> https://www.cnblogs.com/jxldjsn/p/6010720.html
+>> https://www.cnblogs.com/jxldjsn/p/6010720.html
 
-> https://www.percona.com/blog/2016/10/12/mysql-5-7-performance-tuning-immediately-after-installation/
+>> https://www.percona.com/blog/2016/10/12/mysql-5-7-performance-tuning-immediately-after-installation/
 
-> https://www.cnblogs.com/claireyuancy/p/7258314.html
+>> https://www.cnblogs.com/claireyuancy/p/7258314.html
 
-> http://www.codingpedia.org/ama/optimizing-mysql-server-settings/
+>> http://www.codingpedia.org/ama/optimizing-mysql-server-settings/

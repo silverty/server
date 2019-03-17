@@ -10,6 +10,9 @@ package io.moquette.imhandler;
 
 import cn.wildfirechat.proto.WFCMessage;
 import com.hazelcast.core.Member;
+import io.moquette.persistence.MemorySessionStore;
+import io.moquette.persistence.Shard;
+import io.moquette.persistence.TargetEntry;
 import io.moquette.spi.ClientSession;
 import io.moquette.spi.impl.Qos1PublishHandler;
 import io.netty.buffer.ByteBuf;
@@ -24,7 +27,7 @@ import static io.moquette.BrokerConstants.HZ_Cluster_Node_External_Short_Port;
 public class RouteHandler extends IMHandler<WFCMessage.RouteRequest> {
     @Override
     public ErrorCode action(ByteBuf ackPayload, String clientID, String fromUser, WFCMessage.RouteRequest request, Qos1PublishHandler.IMCallback callback) {
-        Member member = mServer.getHazelcastInstance().getCluster().getLocalMember();
+        Member member = Shard.Instance().getMember(fromUser, TargetEntry.Type.TARGET_TYPE_USER);
         String serverIp = member.getStringAttribute(HZ_Cluster_Node_External_IP);
         String longPort = member.getStringAttribute(HZ_Cluster_Node_External_Long_Port);
         String shortPort = member.getStringAttribute(HZ_Cluster_Node_External_Short_Port);

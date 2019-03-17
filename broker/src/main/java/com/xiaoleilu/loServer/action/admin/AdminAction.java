@@ -26,14 +26,13 @@ import win.liyufan.im.RateLimiter;
 
 abstract public class AdminAction extends Action {
     private static String SECRET_KEY = "123456";
-    private final RateLimiter mLimitCounter = new RateLimiter(10, 500);
     public static void setSecretKey(String secretKey) {
         SECRET_KEY = secretKey;
     }
 
     @Override
     public ErrorCode preAction(Request request, Response response) {
-        if (!mLimitCounter.isGranted("admin")) {
+        if (!(this instanceof GetIMTokenAction) && RPCCenter.getInstance().isRateLimited(RPCCenter.RateLimitTypeAdmin)) {
             return ErrorCode.ERROR_CODE_OVER_FREQUENCY;
         }
         String nonce = request.getHeader("nonce");
