@@ -207,6 +207,7 @@ public class MessagesPublisher {
                 targetClients = m_messagesStore.getChatroomMemberClient(user);
             }
             for (Session targetSession : sessions) {
+                //超过7天不活跃的用户忽略
                 if(System.currentTimeMillis() - targetSession.getLastActiveTime() > 7 * 24 * 60 * 60 * 1000) {
                     continue;
                 }
@@ -214,9 +215,11 @@ public class MessagesPublisher {
                 if (exceptClientId != null && exceptClientId.equals(targetSession.getClientSession().clientID)) {
                     continue;
                 }
+
                 if (targetSession.getClientID() == null) {
                     continue;
                 }
+
                 if (pullType == ProtoConstants.PullType.Pull_ChatRoom && !targetClients.contains(targetSession.getClientID())) {
                     continue;
                 }
@@ -233,24 +236,24 @@ public class MessagesPublisher {
                 }
 
                 boolean isSlient;
-                String slientKey = null;
                 if (pullType == ProtoConstants.PullType.Pull_ChatRoom) {
                     isSlient = true;
                 } else {
                     isSlient = false;
+                    WFCMessage.Conversation conversation;
                     if (conversationType == ProtoConstants.ConversationType.ConversationType_Private) {
-                        slientKey = conversationType + "-" + line + "-" + sender;
+                        conversation = WFCMessage.Conversation.newBuilder().setType(conversationType).setLine(line).setTarget(sender).build();
                     } else {
-                        slientKey = conversationType + "-" + line + "-" + target;
+                        conversation = WFCMessage.Conversation.newBuilder().setType(conversationType).setLine(line).setTarget(target).build();
                     }
 
-                    if (targetSession.getSlientConvs().containsKey(slientKey)) {
-                        LOG.info("The conversation {} is slient", slientKey);
+                    if (m_messagesStore.getUserConversationSlient(user, conversation)) {
+                        LOG.info("The conversation {}-{}-{} is slient", conversation.getType(), conversation.getTarget(), conversation.getLine());
                         isSlient = true;
                     }
 
-                    if (targetSession.isGlobalSlient()) {
-                        LOG.info("The user is global sliented");
+                    if (m_messagesStore.getUserGlobalSlient(user)) {
+                        LOG.info("The user {} is global sliented", user);
                         isSlient = true;
                     }
 
@@ -314,10 +317,11 @@ public class MessagesPublisher {
                     }
 
                     if (isSlient) {
-                        LOG.info("The conversation {} is slient", slientKey);
+                        LOG.info("The conversation is slient");
                         continue;
                     }
-                    boolean isHiddenDetail = targetSession.isHiddenNotifyDetail();
+
+                    boolean isHiddenDetail = m_messagesStore.getUserPushHiddenDetail(user);
 
                     if(!nameLoaded) {
                         senderName = getUserDisplayName(sender);
