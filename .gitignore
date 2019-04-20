@@ -51,3 +51,5 @@ broker/config/git.properties
 distribution/src/main/resources/git.properties
 license/target
 server/target
+broker/h2db
+broker/media
