@@ -769,7 +769,7 @@ public class MemoryMessagesStore implements IMessagesStore {
 
         groupMembers.remove(groupId);
         mIMap.remove(groupId);
-        
+
         databaseStore.removeGroupMemberFromDB(groupId);
 
         return ErrorCode.ERROR_CODE_SUCCESS;
