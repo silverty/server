@@ -605,7 +605,7 @@ public class MemorySessionStore implements ISessionsStore {
 
     @Override
     public void cleanSession(String clientID) {
-        LOG.error("Fooooooooo <{}>", clientID);
+        LOG.info("Fooooooooo <{}>", clientID);
 
         Session session = sessions.get(clientID);
         if (session == null) {
