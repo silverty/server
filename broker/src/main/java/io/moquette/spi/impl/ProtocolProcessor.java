@@ -376,7 +376,7 @@ public class ProtocolProcessor implements Shard.MemberChangListener {
             return null;
         }
 
-
+        m_sessionsStore.loadUserSession(username, clientId);
         ClientSession clientSession = m_sessionsStore.sessionForClient(clientId);
         boolean isSessionAlreadyStored = clientSession != null;
         if (isSessionAlreadyStored) {
