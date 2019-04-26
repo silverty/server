@@ -75,7 +75,7 @@ public class CreateGroupAction extends AdminAction {
                             ctx.executor().execute(command);
                         };
                     }
-                });
+                }, true);
             } else {
                 response.setStatus(HttpResponseStatus.OK);
                 RestResult result = RestResult.resultOf(ErrorCode.INVALID_PARAMETER);

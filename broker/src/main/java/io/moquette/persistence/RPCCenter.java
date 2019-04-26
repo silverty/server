@@ -85,7 +85,7 @@ abstract public class RPCCenter {
     protected RPCCenter() {
     }
 
-    public void sendRequest(String fromUser, String clientId, String request, byte[] message, String target, TargetEntry.Type type, Callback callback) {
+    public void sendRequest(String fromUser, String clientId, String request, byte[] message, String target, TargetEntry.Type type, Callback callback, boolean isAdmin) {
         Member member = Shard.Instance().getMember(target, type);
 
         if (member == null) {
@@ -96,6 +96,7 @@ abstract public class RPCCenter {
         }
 
         String from = null;
+
         int requestId = 0;
 
         if (callback != null) {
@@ -110,7 +111,7 @@ abstract public class RPCCenter {
         }
 
         LOG.debug("send rpc request {} from client {} node {} to target {} with requestId {}", request, clientId, member.getUuid(), target, requestId);
-        ex.executeOnMember(new RPCRequest(fromUser, clientId, message, requestId, from, request), member);
+        ex.executeOnMember(new RPCRequest(fromUser, clientId, message, requestId, from, request, isAdmin), member);
     }
 
     public void sendResponse(int errorCode, byte[] message, String toUuid, int requestId) {
@@ -121,8 +122,8 @@ abstract public class RPCCenter {
         }
     }
 
-    public void onReceiveRequest(String fromUser, String clientId, byte[] message, int requestId, String from, String topic) {
-        server.internalRpcMsg(fromUser, clientId, message, requestId, from, topic);
+    public void onReceiveRequest(String fromUser, String clientId, byte[] message, int requestId, String from, String topic, boolean isAdmin) {
+        server.internalRpcMsg(fromUser, clientId, message, requestId, from, topic, isAdmin);
     }
 
     public void onReceiveResponse(byte[] message, int requestId, int errorCode) {

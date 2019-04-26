@@ -64,7 +64,7 @@ public class RPCCenterCommercial extends RPCCenter {
                     server.getImBusinessScheduler().execute(command);
                 };
             }
-        });
+        }, false);
         try {
             latch.await();
         } catch (InterruptedException e) {

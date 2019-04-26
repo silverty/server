@@ -16,20 +16,22 @@ public class RPCRequest implements Runnable, Serializable {
     final String request;
     final String fromUser;
     final String clientId;
+    final boolean isAdmin;
 
-    public RPCRequest(String fromUser, String clientId, byte[] message, int requestId, String from, String request) {
+    public RPCRequest(String fromUser, String clientId, byte[] message, int requestId, String from, String request, boolean isAdmin) {
         this.requestId = requestId;
         this.message = message;
         this.from = from;
         this.request = request;
         this.fromUser = fromUser;
         this.clientId = clientId;
+        this.isAdmin = isAdmin;
     }
 
     @Override
     public void run() {
         if(!RPCCenter.getInstance().handleCommercialRequest(request, clientId, from, requestId)) {
-            RPCCenter.getInstance().onReceiveRequest(fromUser, clientId, message, requestId, from, request);
+            RPCCenter.getInstance().onReceiveRequest(fromUser, clientId, message, requestId, from, request, isAdmin);
         }
     }
 }

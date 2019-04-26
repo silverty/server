@@ -326,7 +326,7 @@ public class MemorySessionStore implements ISessionsStore {
                         mServer.getImBusinessScheduler().execute(command);
                     };
                 }
-            });
+            }, false);
             try {
                 latch.await();
             } catch (InterruptedException e) {
@@ -397,7 +397,7 @@ public class MemorySessionStore implements ISessionsStore {
         }
 
 
-        RPCCenter.getInstance().sendRequest(username, clientID, RPCCenter.UPDATE_USER_COUNT, null, username, TargetEntry.Type.TARGET_TYPE_MASTER_NODE, null);
+        RPCCenter.getInstance().sendRequest(username, clientID, RPCCenter.UPDATE_USER_COUNT, null, username, TargetEntry.Type.TARGET_TYPE_MASTER_NODE, null, false);
 
         return session.clientSession;
     }
