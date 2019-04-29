@@ -383,9 +383,9 @@ public class Server {
 
         Tokenor.setKey(config.getProperty(BrokerConstants.TOKEN_SECRET_KEY));
 
-        RPCCenter.getInstance().decodeLicense(hazelcastInstance, serverIp, shortPort);
         Shard.Instance().init(hazelcastInstance);
         RPCCenter.getInstance().init(this);
+        RPCCenter.getInstance().decodeLicense(hazelcastInstance, serverIp, shortPort);
         return RPCCenter.getInstance().checkAllowedRun(this);
     }
 
