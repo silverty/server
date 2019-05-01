@@ -33,7 +33,7 @@ public class BlockUserAction extends AdminAction {
     }
 
     @Override
-    public void action(Request request, Response response) {
+    public boolean action(Request request, Response response) {
         if (request.getNettyRequest() instanceof FullHttpRequest) {
             InputOutputUserBlockStatus inputUserBlock = getRequestBody(request.getNettyRequest(), InputOutputUserBlockStatus.class);
             if (inputUserBlock != null
@@ -55,5 +55,6 @@ public class BlockUserAction extends AdminAction {
             }
 
         }
+        return true;
     }
 }
