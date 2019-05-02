@@ -46,6 +46,7 @@ public interface IMTopic {
     String FriendPullTopic = "FP";
     String NotifyFriendTopic = "FN";
     String BlackListUserTopic = "BLU";
+    String SetFriendAliasTopic = "FALS";
 
     String UploadDeviceTokenTopic = "UDT";
 
