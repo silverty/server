@@ -344,6 +344,7 @@ message Friend {
   required string uid = 1;
   required int32 state = 2;
   required int64 update_dt = 3;
+  optional string alias = 4;
 }
 
 message GetFriendsResult {
