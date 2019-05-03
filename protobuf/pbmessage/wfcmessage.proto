@@ -445,3 +445,11 @@ message GetTokenRequest {
   required string user_id = 1;
   required string client_id = 2;
 }
+
+message LoadRemoteMessages {
+  required Conversation conversation = 1;
+  required int64 before_uid = 2;
+  required int32 count = 3;
+}
+
+
