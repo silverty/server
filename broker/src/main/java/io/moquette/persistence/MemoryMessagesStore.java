@@ -141,7 +141,13 @@ public class MemoryMessagesStore implements IMessagesStore {
     private void updateSensitiveWord() {
         long now = System.currentTimeMillis();
         if (now - lastUpdateSensitiveTime > 2 * 60 * 60 * 1000) {
-            lastUpdateSensitiveTime = now;
+            synchronized (this) {
+                if (now - lastUpdateSensitiveTime > 2 * 60 * 60 * 1000) {
+                    lastUpdateSensitiveTime = now;
+                } else {
+                    return;
+                }
+            }
             Set<String> sensitiveWords = databaseStore.getSensitiveWord();
             mSensitiveFilter = new SensitiveFilter(sensitiveWords);
         }
@@ -2049,6 +2055,7 @@ public class MemoryMessagesStore implements IMessagesStore {
             words) {
             databaseStore.persistSensitiveWord(word);
         }
+        lastUpdateSensitiveTime = 0;
         return true;
     }
 
