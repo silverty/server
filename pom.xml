@@ -39,6 +39,7 @@
         <module>client</module>
         <module>server</module>
         <module>distribution</module>
+        <module>common</module>
     </modules>
 
     <build>
