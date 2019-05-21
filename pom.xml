@@ -33,12 +33,12 @@
 
     <modules>
         <module>broker</module>
-        <module>distribution</module>
         <module>perf</module>
         <module>wildfire_jmeter</module>
         <module>license</module>
         <module>client</module>
         <module>server</module>
+        <module>distribution</module>
     </modules>
 
     <build>
