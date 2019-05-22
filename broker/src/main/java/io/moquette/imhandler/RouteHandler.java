@@ -16,7 +16,7 @@ import io.moquette.persistence.TargetEntry;
 import io.moquette.spi.ClientSession;
 import io.moquette.spi.impl.Qos1PublishHandler;
 import io.netty.buffer.ByteBuf;
-import win.liyufan.im.ErrorCode;
+import common.cn.wildfirechat.ErrorCode;
 import win.liyufan.im.IMTopic;
 
 import static io.moquette.BrokerConstants.HZ_Cluster_Node_External_IP;

@@ -21,7 +21,7 @@ import java.io.DataInputStream;
 import java.io.IOException;
 
 import org.eclipse.paho.client.mqttv3.MqttException;
-import win.liyufan.im.ErrorCode;
+import common.cn.wildfirechat.ErrorCode;
 
 
 /**

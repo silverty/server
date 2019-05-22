@@ -30,16 +30,15 @@
     </licenses>
 
 
-
     <modules>
         <module>broker</module>
-        <module>perf</module>
         <module>wildfire_jmeter</module>
         <module>license</module>
         <module>client</module>
         <module>server</module>
-        <module>distribution</module>
         <module>common</module>
+        <module>sdk</module>
+        <module>distribution</module>
     </modules>
 
     <build>
