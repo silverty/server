@@ -293,7 +293,7 @@ public class MemorySessionStore implements ISessionsStore {
 
 
     @Override
-    public ErrorCode createNewSession(String username, String clientID, boolean cleanSession) {
+    public ErrorCode createNewSession(String username, String clientID, boolean cleanSession, boolean createWhenNoExist) {
         LOG.debug("createNewSession for client <{}>", clientID);
         if (Shard.Instance().isClusterMode()) {
             //todo check member limit
@@ -349,6 +349,10 @@ public class MemorySessionStore implements ISessionsStore {
         session = databaseStore.getSession(username, clientID, clientSession);
 
         if (session == null) {
+            if (!createWhenNoExist) {
+                return ErrorCode.ERROR_CODE_NOT_EXIST;
+            }
+
             session = databaseStore.createSession(username, clientID, clientSession);
         }
 
