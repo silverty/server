@@ -24,6 +24,7 @@ import io.moquette.spi.ClientSession;
 import io.moquette.spi.IMessagesStore.StoredMessage;
 import io.moquette.spi.ISessionsStore;
 
+import io.netty.handler.codec.mqtt.MqttVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import win.liyufan.im.Utility;
@@ -49,6 +50,8 @@ public class MemorySessionStore implements ISessionsStore {
         private long lastChatroomActiveTime;
 
         private volatile int unReceivedMsgs;
+
+        private MqttVersion mqttVersion = MqttVersion.MQTT_3_1_1;
 
         public long getLastActiveTime() {
             return lastActiveTime;
@@ -231,7 +234,13 @@ public class MemorySessionStore implements ISessionsStore {
 		}
 
 
-        
+        public MqttVersion getMqttVersion() {
+            return mqttVersion;
+        }
+
+        public void setMqttVersion(MqttVersion mqttVersion) {
+            this.mqttVersion = mqttVersion;
+        }
     }
 
     static int getDataByte1() {
