@@ -53,3 +53,6 @@ license/target
 server/target
 broker/h2db
 broker/media
+common/target
+server/target
+sdk/target
