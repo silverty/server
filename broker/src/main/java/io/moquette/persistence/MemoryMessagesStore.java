@@ -26,6 +26,7 @@ import cn.wildfirechat.pojos.InputOutputUserBlockStatus;
 import io.moquette.server.Server;
 import io.moquette.spi.IMatchingCondition;
 import io.moquette.spi.IMessagesStore;
+import io.moquette.spi.impl.security.TokenAuthenticator;
 import io.moquette.spi.security.Tokenor;
 import io.moquette.spi.impl.subscriptions.Topic;
 import org.slf4j.Logger;
@@ -33,6 +34,8 @@ import org.slf4j.LoggerFactory;
 import sun.misc.BASE64Encoder;
 import win.liyufan.im.*;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.security.MessageDigest;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
