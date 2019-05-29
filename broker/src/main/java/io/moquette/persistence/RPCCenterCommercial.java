@@ -1,9 +1,9 @@
 package io.moquette.persistence;
 
+import cn.wildfirechat.common.ErrorCode;
 import com.hazelcast.core.HazelcastInstance;
 import com.xiaoleilu.loServer.handler.Request;
 import com.xiaoleilu.loServer.handler.Response;
-import common.cn.wildfirechat.ErrorCode;
 import io.moquette.server.Server;
 import io.moquette.server.config.IConfig;
 import win.liyufan.im.RateLimiter;

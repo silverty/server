@@ -1,7 +1,6 @@
 package io.moquette.persistence.remote;
 
 import io.moquette.persistence.RPCCenter;
-import common.cn.wildfirechat.ErrorCode;
 
 import java.io.Serializable;
 

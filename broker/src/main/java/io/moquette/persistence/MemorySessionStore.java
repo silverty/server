@@ -16,6 +16,7 @@
 
 package io.moquette.persistence;
 
+import cn.wildfirechat.common.ErrorCode;
 import cn.wildfirechat.proto.WFCMessage;
 import io.moquette.server.Constants;
 import io.moquette.server.Server;
@@ -25,7 +26,6 @@ import io.moquette.spi.ISessionsStore;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import common.cn.wildfirechat.ErrorCode;
 import win.liyufan.im.Utility;
 
 import java.util.*;
