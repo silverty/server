@@ -42,16 +42,24 @@ public class DBUtil {
     };
     private static MongoDatabase database;
 
-        public static boolean IsEmbedDB = false;
+    public static boolean IsEmbedDB = false;
+    public static boolean UseMongoDB = false;
 
         public static void init(IConfig config) {
             String embedDB = config.getProperty(BrokerConstants.EMBED_DB_PROPERTY_NAME);
             if (embedDB != null && embedDB.equals("1")) {
                 IsEmbedDB = true;
                 LOG.info("Use h2 database");
-            } else {
+            } else if (embedDB != null && embedDB.equals("0")) {
                 IsEmbedDB = false;
                 LOG.info("Use mysql database");
+            } else if(embedDB != null && embedDB.equals("2")) {
+                IsEmbedDB = false;
+                UseMongoDB = true;
+                LOG.info("Use mysql + mongodb database");
+            } else {
+                IsEmbedDB = true;
+                LOG.info("Invalid db config. Use h2 database");
             }
 
             if (comboPooledDataSource == null) {
@@ -105,7 +113,9 @@ public class DBUtil {
                 Flyway flyway = Flyway.configure().dataSource(comboPooledDataSource).locations(migrateLocation).baselineOnMigrate(true).load();
                 flyway.migrate();
 
-                initMongoDB(config);
+                if (UseMongoDB) {
+                    initMongoDB(config);
+                }
             }
         }
 

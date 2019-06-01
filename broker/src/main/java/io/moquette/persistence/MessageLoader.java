@@ -47,7 +47,7 @@ public class MessageLoader implements MapStore<Long, MessageBundle> {
      */
     @Override
     public Map<Long, MessageBundle> loadAll(Collection<Long> keys) {
-        return getDatabaseStore().getMessages(keys);
+        return null;
     }
 
     /**
