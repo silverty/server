@@ -16,12 +16,14 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.hazelcast.util.StringUtil;
 import com.mchange.v2.c3p0.ComboPooledDataSource;
+import com.mongodb.*;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.MongoDatabase;
 import io.moquette.BrokerConstants;
 import io.moquette.server.config.IConfig;
+import org.bson.Document;
 import org.flywaydb.core.Flyway;
-import org.flywaydb.core.api.configuration.FlywayConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -38,6 +40,7 @@ public class DBUtil {
             return null;
         }
     };
+    private static MongoDatabase database;
 
         public static boolean IsEmbedDB = false;
 
@@ -101,7 +104,18 @@ public class DBUtil {
                 }
                 Flyway flyway = Flyway.configure().dataSource(comboPooledDataSource).locations(migrateLocation).baselineOnMigrate(true).load();
                 flyway.migrate();
+
+                initMongoDB(config);
             }
+        }
+
+        private static void initMongoDB(IConfig config) {
+            String mongoClientUri = config.getProperty(BrokerConstants.MONGODB_Client_URI);
+
+            MongoClient mongoClient = new MongoClient(new MongoClientURI(mongoClientUri));
+
+            String mongoDBName = config.getProperty(BrokerConstants.MONGODB_Database);
+            database = mongoClient.getDatabase(mongoDBName);
         }
 
         private static List<String> getCreateSql() {
@@ -143,7 +157,15 @@ public class DBUtil {
             return connection;
         }
 
-        public static void beginTransaction() {
+    public static MongoDatabase getDatabase() {
+        return database;
+    }
+
+    public static void setDatabase(MongoDatabase database) {
+        DBUtil.database = database;
+    }
+
+    public static void beginTransaction() {
             try {
                 Connection connection = getConnection();
                 connection.setAutoCommit(false);

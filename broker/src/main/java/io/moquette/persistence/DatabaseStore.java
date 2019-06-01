@@ -11,11 +11,17 @@ package io.moquette.persistence;
 import cn.wildfirechat.proto.ProtoConstants;
 import cn.wildfirechat.proto.WFCMessage;
 import cn.wildfirechat.server.ThreadPoolExecutorWrapper;
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.hazelcast.core.HazelcastInstance;
 import com.hazelcast.core.MultiMap;
 import com.hazelcast.util.StringUtil;
+import com.mongodb.*;
+import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoCollection;
 import com.xiaoleilu.loServer.model.FriendData;
 import io.moquette.spi.ClientSession;
+import org.bson.Document;
+import org.bson.types.Binary;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.misc.BASE64Encoder;
@@ -24,6 +30,7 @@ import win.liyufan.im.MessageBundle;
 import win.liyufan.im.MessageShardingUtil;
 import win.liyufan.im.Utility;
 
+import javax.xml.parsers.DocumentBuilder;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.sql.*;
@@ -481,6 +488,19 @@ public class DatabaseStore {
         }
     }
 
+    private static Document createDBObject(WFCMessage.Message message) {
+        Document docBuilder = new Document();
+
+        docBuilder.append("_id", message.getMessageId())
+            .append("_from", message.getFromUser())
+            .append("_type", message.getConversation().getType())
+            .append("_target", message.getConversation().getTarget())
+            .append("_line", message.getConversation().getLine())
+            .append("_data", message.getContent().toByteArray())
+            .append("_searchable_key", message.getContent().getSearchableContent())
+            .append("_dt", message.getServerTimestamp());
+        return docBuilder;
+    }
 
     void persistMessage(final WFCMessage.Message message, boolean update) {
         if(message.getContent().getPersistFlag() == Transparent) {
@@ -488,6 +508,12 @@ public class DatabaseStore {
         }
 
         mScheduler.execute(()-> {
+            if (DBUtil.getDatabase() != null) {
+                MongoCollection<Document> msgTable = DBUtil.getDatabase().getCollection("t_messages");
+                Document doc = createDBObject(message);
+                msgTable.insertOne(doc);
+                return;
+            }
             Connection connection = null;
             PreparedStatement statement = null;
             try {
@@ -529,8 +555,52 @@ public class DatabaseStore {
             }
         });
     }
+    private static WFCMessage.Message createMessage(Document document) throws InvalidProtocolBufferException {
+        WFCMessage.Message.Builder builder = WFCMessage.Message.newBuilder();
+        builder.setMessageId(document.getLong("_id"));
+        builder.setFromUser(document.getString("_from"));
+        WFCMessage.Conversation.Builder cb = WFCMessage.Conversation.newBuilder();
+        cb.setType(document.getInteger("_type"));
+        cb.setTarget(document.getString("_target"));
+        cb.setLine(document.getInteger("_line", 0));
+        builder.setConversation(cb.build());
+
+        Binary blob = document.get("_data", Binary.class);
+
+        WFCMessage.MessageContent messageContent = WFCMessage.MessageContent.parseFrom(blob.getData());
+        builder.setContent(messageContent);
+        builder.setServerTimestamp(document.getLong("_dt"));
+        WFCMessage.Message message = builder.build();
+
+       return message;
+    }
 
     Map<Long, MessageBundle> getMessages(Collection<Long> keys) {
+        final Map<Long, MessageBundle> out = new HashMap<>();
+        if (DBUtil.getDatabase() != null) {
+            MongoCollection<Document> msgTable = DBUtil.getDatabase().getCollection("t_messages");
+            BasicDBObject searchQuery = new BasicDBObject();
+            BasicDBObject in = new BasicDBObject();
+            in.put("$in", keys);
+            searchQuery.put("_id", in);
+            FindIterable<Document> cursor = msgTable.find(searchQuery);
+            BasicDBObject sort = new BasicDBObject();
+            sort.put("_id", 1);
+            cursor.sort(sort);
+            cursor.forEach(new Block<Document>() {
+                @Override
+                public void apply(Document document) {
+                    try {
+                        WFCMessage.Message message = createMessage(document);
+                        out.put(message.getMessageId(), new MessageBundle(message.getMessageId(), message.getFromUser(), null, message));
+                    } catch (Exception e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+            return out;
+        }
+
         Map<String, List<Long>> messageTableMap = new HashMap<>();
         for (Long key : keys) {
             String messageTableId = MessageShardingUtil.getMessageTable(key);
@@ -544,13 +614,11 @@ public class DatabaseStore {
             messageTableMap.get(messageTableId).add(key);
         }
 
-        Map<Long, MessageBundle> out = null;
         Connection connection = null;
         try {
             connection = DBUtil.getConnection();
-            out = new HashMap<>();
             for (Map.Entry<String, List<Long>> entry : messageTableMap.entrySet()) {
-                String sql = "select `_mid`, `_from`, `_type`, `_target`, `_line`, `_data`, `_dt` from " + entry.getKey() +" where _mid in (";
+                String sql = "select `_mid`, `_from`, `_type`, `_target`, `_line`, `_data`, `_dt` from " + entry.getKey() + " where _mid in (";
                 for (int i = 0; i < entry.getValue().size(); i++) {
                     sql += entry.getValue().get(i);
                     if (i != entry.getValue().size() - 1) {
@@ -580,7 +648,7 @@ public class DatabaseStore {
                         builder.setContent(messageContent);
                         builder.setServerTimestamp(resultSet.getTimestamp(index++).getTime());
                         WFCMessage.Message message = builder.build();
-                        out.put(message.getMessageId(),new MessageBundle(message.getMessageId(), message.getFromUser(), null, message));
+                        out.put(message.getMessageId(), new MessageBundle(message.getMessageId(), message.getFromUser(), null, message));
                     }
                 } catch (SQLException e) {
                     e.printStackTrace();
@@ -590,7 +658,7 @@ public class DatabaseStore {
                     Utility.printExecption(LOG, e);
                 } finally {
                     try {
-                        if (resultSet!=null) {
+                        if (resultSet != null) {
                             resultSet.close();
                         }
                     } catch (SQLException e) {
@@ -606,12 +674,37 @@ public class DatabaseStore {
         } finally {
             DBUtil.closeDB(connection, null);
         }
-
         return out;
     }
 
     MessageBundle getMessage(long messageId) {
-        String sql = "select  `_from`, `_type`, `_target`, `_line`, `_data`, `_dt` from " + MessageShardingUtil.getMessageTable(messageId) +" where _mid = ? limit 1";
+        if (DBUtil.getDatabase() != null) {
+            MongoCollection<Document> msgTable = DBUtil.getDatabase().getCollection("t_messages");
+            BasicDBObject searchQuery = new BasicDBObject();
+            searchQuery.put("_id", messageId);
+            FindIterable<Document> cursor = msgTable.find(searchQuery);
+            cursor.limit(1);
+            WFCMessage.Message message = null;
+            MessageBundle bundle = new MessageBundle();
+            cursor.forEach(new Block<Document>() {
+                @Override
+                public void apply(Document document) {
+                    try {
+                        bundle.setMessage(createMessage(document));
+                    } catch (InvalidProtocolBufferException e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+            if (bundle.getMessage() != null) {
+                return bundle;
+            }
+            return null;
+        }
+
+
+
+        String sql = "select  `_from`, `_type`, `_target`, `_line`, `_data`, `_dt` from " + MessageShardingUtil.getMessageTable(messageId) + " where _mid = ? limit 1";
         Connection connection = null;
         PreparedStatement statement = null;
         try {
@@ -648,6 +741,57 @@ public class DatabaseStore {
     }
 
     List<WFCMessage.Message> loadRemoteMessages(String user, WFCMessage.Conversation conversation, long beforeUid, int count) {
+        if (DBUtil.getDatabase() != null) {
+            List<WFCMessage.Message> messages = new ArrayList<>();
+            MongoCollection<Document> msgTable = DBUtil.getDatabase().getCollection("t_messages");
+            BasicDBObject searchQuery = new BasicDBObject();
+
+
+            searchQuery.put("_type", conversation.getType());
+            searchQuery.put("_line", conversation.getLine());
+
+            BasicDBObject midGreate = new BasicDBObject();
+            midGreate.put("$lt", beforeUid);
+            searchQuery.put("_id", midGreate);
+
+
+            if (conversation.getType() == ProtoConstants.ConversationType.ConversationType_Private) {
+                BasicDBObject targetCon = new BasicDBObject();
+                BasicDBObject from = new BasicDBObject();
+                BasicDBObject to = new BasicDBObject();
+
+                from.put("_target", conversation.getTarget());
+                from.put("_from", user);
+
+                to.put("_target", user);
+                to.put("_from", conversation.getTarget());
+
+                targetCon.put("$or", Arrays.asList(from, to));
+
+                BasicDBObject tmp = new BasicDBObject();
+                tmp.put("$and", Arrays.asList(searchQuery, targetCon));
+                searchQuery = tmp;
+//                sql += " _type = ? and _line = ? and _mid < ? and ((_target = ?  and _from = ?) or (_target = ?  and _from = ?))";
+            } else {
+//                sql += " _type = ? and _line = ? and _mid < ? and _target = ?";
+                searchQuery.put("_target", conversation.getTarget());
+            }
+
+            FindIterable<Document> cursor = msgTable.find(searchQuery);
+            cursor.forEach(new Block<Document>() {
+                @Override
+                public void apply(Document document) {
+                    try {
+                        WFCMessage.Message message = createMessage(document);
+                        messages.add(message);
+                    } catch (InvalidProtocolBufferException e) {
+                        e.printStackTrace();
+                    }
+                }
+            });
+            return messages;
+        }
+
         List<WFCMessage.Message> messages = loadRemoteMessagesFromTable(user, conversation, beforeUid, count, MessageShardingUtil.getMessageTable(beforeUid));
         if (messages != null && messages.size() < count) {
             String nexTable = MessageShardingUtil.getPreviousMessageTable(beforeUid);

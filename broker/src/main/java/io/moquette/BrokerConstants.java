@@ -113,6 +113,10 @@ public final class BrokerConstants {
 
     public static final String MESSAGE_Forward_Url = "message.forward.url";
 
+    public static final String MONGODB_Client_URI = "mongodb.client_uri";
+    public static final String MONGODB_Database = "mongodb.database";
+    public static final String MONGODB_Username = "mongodb.username";
+    public static final String MONGODB_Password = "mongodb.password";
 
 
     private BrokerConstants() {
