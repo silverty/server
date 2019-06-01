@@ -325,9 +325,6 @@ public class MemoryMessagesStore implements IMessagesStore {
                 long targetMessageId = entry.getValue();
 
                 MessageBundle bundle = mIMap.get(targetMessageId);
-                if (bundle == null) {
-                    bundle = databaseStore.getMessage(targetMessageId);
-                }
 
                 if (bundle != null) {
                     if (exceptClientId == null || !exceptClientId.equals(bundle.getFromClientId()) || !user.equals(bundle.getFromUser())) {
@@ -417,10 +414,6 @@ public class MemoryMessagesStore implements IMessagesStore {
                 long targetMessageId = entry.getValue();
 
                 MessageBundle bundle = mIMap.get(targetMessageId);
-                if (bundle == null) {
-                    bundle = databaseStore.getMessage(targetMessageId);
-                }
-
                 if (bundle != null) {
                     if (exceptClientId == null || !exceptClientId.equals(bundle.getFromClientId()) || !fromUser.equals(bundle.getFromUser())) {
                         size += bundle.getMessage().getSerializedSize();
@@ -2140,10 +2133,6 @@ public class MemoryMessagesStore implements IMessagesStore {
         MessageBundle bundle = mIMap.get(messageId);
         if (bundle != null) {
             return bundle.getMessage();
-        } else {
-            bundle = databaseStore.getMessage(messageId);
-            if (bundle != null)
-                return bundle.getMessage();
         }
         return null;
     }
