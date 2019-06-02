@@ -33,6 +33,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
+import static io.moquette.BrokerConstants.MONGODB_Data_Expire_Days;
+
 public class DBUtil {
     private static final Logger LOG = LoggerFactory.getLogger(DBUtil.class);
     private static ComboPooledDataSource comboPooledDataSource = null;
@@ -124,6 +126,14 @@ public class DBUtil {
         }
 
         private static void initMongoDB(IConfig config) {
+            long expireAfterDays = 1096;
+            try {
+                expireAfterDays = Long.parseLong(config.getProperty(MONGODB_Data_Expire_Days));
+            } catch (NumberFormatException e) {
+                e.printStackTrace();
+            }
+
+
             String mongoClientUri = config.getProperty(BrokerConstants.MONGODB_Client_URI);
 
             MongoClient mongoClient = new MongoClient(new MongoClientURI(mongoClientUri));
@@ -159,7 +169,7 @@ public class DBUtil {
                     createIndex2.put("_createTime", -1);
                     IndexOptions options2 = new IndexOptions();
                     options2.background(true);
-                    options2.expireAfter(6L, TimeUnit.DAYS);
+                    options2.expireAfter(expireAfterDays, TimeUnit.DAYS);
                     collection.createIndex(createIndex2, options2);
                 }
 
@@ -181,7 +191,7 @@ public class DBUtil {
                     createIndex2.put("_dt", -1);
                     IndexOptions options2 = new IndexOptions();
                     options2.background(true);
-                    options2.expireAfter(6L, TimeUnit.DAYS);
+                    options2.expireAfter(expireAfterDays, TimeUnit.DAYS);
                     collection.createIndex(createIndex2, options2);
 
 
