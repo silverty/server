@@ -18,8 +18,10 @@ import java.util.List;
 
 import com.mchange.v2.c3p0.ComboPooledDataSource;
 import com.mongodb.*;
+import com.mongodb.client.ListIndexesIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
+import com.mongodb.client.model.IndexOptions;
 import io.moquette.BrokerConstants;
 import io.moquette.server.config.IConfig;
 import org.bson.Document;
@@ -28,6 +30,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 public class DBUtil {
     private static final Logger LOG = LoggerFactory.getLogger(DBUtil.class);
@@ -126,6 +130,61 @@ public class DBUtil {
 
             String mongoDBName = config.getProperty(BrokerConstants.MONGODB_Database);
             database = mongoClient.getDatabase(mongoDBName);
+
+            MongoCollection<Document> collectionMessage =  database.getCollection("t_messages_0");
+            ListIndexesIterable<Document> indexs = collectionMessage.listIndexes();
+
+            ArrayList<String> indexNames = new ArrayList<>();
+            indexs.forEach(new Consumer<Document>() {
+                @Override
+                public void accept(Document document) {
+                    indexNames.add(document.getString("name"));
+                }
+            });
+
+            if (indexNames.size() < 2) {
+                for (int i = 0; i < 128; i++) {
+                    String userMessagsName = "t_user_messages_" + i;
+
+                    MongoCollection<Document> collection = database.getCollection(userMessagsName);
+
+                    BasicDBObject createIndex = new BasicDBObject();
+                    createIndex.put("_uid", 1);
+                    createIndex.put("_seq", -1);
+                    IndexOptions options = new IndexOptions();
+                    options.background(true);
+                    options.expireAfter(6L, TimeUnit.MINUTES);
+                    collection.createIndex(createIndex, options);
+                }
+
+                for (int i = 0; i < 36; i++) {
+                    String messagsName = "t_messages_" + i;
+
+                    MongoCollection<Document> collection = database.getCollection(messagsName);
+
+                    BasicDBObject createIndex1 = new BasicDBObject();
+                    createIndex1.put("_type", 1);
+                    createIndex1.put("_target", 1);
+                    createIndex1.put("_line", 1);
+                    IndexOptions options1 = new IndexOptions();
+                    options1.background(true);
+                    collection.createIndex(createIndex1, options1);
+
+
+                    BasicDBObject createIndex2 = new BasicDBObject();
+                    createIndex2.put("_dt", -1);
+                    IndexOptions options2 = new IndexOptions();
+                    options2.background(true);
+                    options2.expireAfter(6L, TimeUnit.MINUTES);
+                    collection.createIndex(createIndex2, options2);
+
+
+                    BasicDBObject createIndex3 = new BasicDBObject();
+                    createIndex3.put("_from", 1);
+                    collection.createIndex(createIndex3, options1);
+                }
+            }
+
         }
 
         private static List<String> getCreateSql() {

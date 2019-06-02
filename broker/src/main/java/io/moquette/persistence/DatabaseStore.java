@@ -35,6 +35,7 @@ import java.io.IOException;
 import java.security.MessageDigest;
 import java.sql.*;
 import java.util.*;
+import java.util.Date;
 import java.util.function.Function;
 
 import static cn.wildfirechat.proto.ProtoConstants.PersistFlag.Transparent;
@@ -526,14 +527,18 @@ public class DatabaseStore {
     private static Document createDBObject(WFCMessage.Message message) {
         Document docBuilder = new Document();
 
+        String target = message.getConversation().getTarget();
+        if (message.getConversation().getType() == ProtoConstants.ConversationType.ConversationType_Private) {
+            target = message.getFromUser().compareTo(message.getConversation().getTarget()) > 0 ?  message.getConversation().getTarget() + "|" + message.getFromUser() : message.getFromUser() + "|" + message.getConversation().getTarget();
+        }
         docBuilder.append("_id", message.getMessageId())
             .append("_from", message.getFromUser())
             .append("_type", message.getConversation().getType())
-            .append("_target", message.getConversation().getTarget())
+            .append("_target", target)
             .append("_line", message.getConversation().getLine())
             .append("_data", message.getContent().toByteArray())
             .append("_searchable_key", message.getContent().getSearchableContent())
-            .append("_dt", message.getServerTimestamp());
+            .append("_dt", new Date(message.getServerTimestamp()));
         return docBuilder;
     }
 
@@ -596,7 +601,19 @@ public class DatabaseStore {
         builder.setFromUser(document.getString("_from"));
         WFCMessage.Conversation.Builder cb = WFCMessage.Conversation.newBuilder();
         cb.setType(document.getInteger("_type"));
-        cb.setTarget(document.getString("_target"));
+        String target = document.getString("_target");
+        if (cb.getType() == ProtoConstants.ConversationType.ConversationType_Private) {
+            String[] ts = target.split("\\|");
+            if (ts.length != 2) {
+                return null;
+            }
+            if (ts[0].equals(builder.getFromUser())) {
+                target = ts[1];
+            } else {
+                target = ts[0];
+            }
+        }
+        cb.setTarget(target);
         cb.setLine(document.getInteger("_line", 0));
         builder.setConversation(cb.build());
 
@@ -604,7 +621,7 @@ public class DatabaseStore {
 
         WFCMessage.MessageContent messageContent = WFCMessage.MessageContent.parseFrom(blob.getData());
         builder.setContent(messageContent);
-        builder.setServerTimestamp(document.getLong("_dt"));
+        builder.setServerTimestamp(document.getDate("_dt").getTime());
         WFCMessage.Message message = builder.build();
 
        return message;
@@ -695,34 +712,21 @@ public class DatabaseStore {
 
 
             searchQuery.put("_type", conversation.getType());
+
+            if (conversation.getType() == ProtoConstants.ConversationType.ConversationType_Private) {
+                String target = user.compareTo(conversation.getTarget()) > 0 ?  conversation.getTarget() + "|" + user : user + "|" + conversation.getTarget();
+                searchQuery.put("_target", target);
+//                sql += " _type = ? and _line = ? and _mid < ? and ((_target = ?  and _from = ?) or (_target = ?  and _from = ?))";
+            } else {
+//                sql += " _type = ? and _line = ? and _mid < ? and _target = ?";
+                searchQuery.put("_target", conversation.getTarget());
+            }
             searchQuery.put("_line", conversation.getLine());
 
             BasicDBObject midGreate = new BasicDBObject();
             midGreate.put("$lt", beforeUid);
             searchQuery.put("_id", midGreate);
 
-
-            if (conversation.getType() == ProtoConstants.ConversationType.ConversationType_Private) {
-                BasicDBObject targetCon = new BasicDBObject();
-                BasicDBObject from = new BasicDBObject();
-                BasicDBObject to = new BasicDBObject();
-
-                from.put("_target", conversation.getTarget());
-                from.put("_from", user);
-
-                to.put("_target", user);
-                to.put("_from", conversation.getTarget());
-
-                targetCon.put("$or", Arrays.asList(from, to));
-
-                BasicDBObject tmp = new BasicDBObject();
-                tmp.put("$and", Arrays.asList(searchQuery, targetCon));
-                searchQuery = tmp;
-//                sql += " _type = ? and _line = ? and _mid < ? and ((_target = ?  and _from = ?) or (_target = ?  and _from = ?))";
-            } else {
-//                sql += " _type = ? and _line = ? and _mid < ? and _target = ?";
-                searchQuery.put("_target", conversation.getTarget());
-            }
 
             FindIterable<Document> cursor = msgTable.find(searchQuery);
             BasicDBObject sort = new BasicDBObject();
@@ -807,7 +811,8 @@ public class DatabaseStore {
 
                 doc.append("_mid", messageId)
                     .append("_uid", userId)
-                    .append("_seq", messageSeq);
+                    .append("_seq", messageSeq)
+                    .append("_createTime", new Date());
 
                 userMsgTable.insertOne(doc);
                 return;
