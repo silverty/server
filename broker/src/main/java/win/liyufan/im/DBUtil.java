@@ -153,8 +153,14 @@ public class DBUtil {
                     createIndex.put("_seq", -1);
                     IndexOptions options = new IndexOptions();
                     options.background(true);
-                    options.expireAfter(6L, TimeUnit.MINUTES);
                     collection.createIndex(createIndex, options);
+
+                    BasicDBObject createIndex2 = new BasicDBObject();
+                    createIndex2.put("_createTime", -1);
+                    IndexOptions options2 = new IndexOptions();
+                    options2.background(true);
+                    options2.expireAfter(6L, TimeUnit.DAYS);
+                    collection.createIndex(createIndex2, options2);
                 }
 
                 for (int i = 0; i < 36; i++) {
@@ -175,7 +181,7 @@ public class DBUtil {
                     createIndex2.put("_dt", -1);
                     IndexOptions options2 = new IndexOptions();
                     options2.background(true);
-                    options2.expireAfter(6L, TimeUnit.MINUTES);
+                    options2.expireAfter(6L, TimeUnit.DAYS);
                     collection.createIndex(createIndex2, options2);
 
 
