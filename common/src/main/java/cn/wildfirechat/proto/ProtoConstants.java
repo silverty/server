@@ -9,6 +9,8 @@ public class ProtoConstants {
         int ConversationType_ChatRoom = 2;
         int ConversationType_Channel = 3;
         int ConversationType_Thing = 4;
+        int ConversationType_Moment_Feed = 5;
+        int ConversationType_Moment_Comment = 6;
     }
 
     //message GroupInfo -> type
@@ -123,10 +125,15 @@ public class ProtoConstants {
         int UserType_Device = 2;
     }
 
+    public interface WFMContentType {
+        int TEXT_Type = 0;
+        int IMAGE_Type = 1;
+        int VIDEO_Type = 2;
+        int LINK_Type = 3;
+    }
 
-
-
-
+    public static final int MESSAGE_CONTENT_TYPE_FEED = 501;
+    public static final int MESSAGE_CONTENT_TYPE_COMMENT = 502;
 
     public static final int MESSAGE_CONTENT_TYPE_CREATE_GROUP = 104;
     public static final int MESSAGE_CONTENT_TYPE_ADD_GROUP_MEMBER = 105;

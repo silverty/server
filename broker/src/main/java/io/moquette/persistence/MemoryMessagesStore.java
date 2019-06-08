@@ -30,6 +30,7 @@ import io.moquette.spi.IMessagesStore;
 import io.moquette.spi.impl.security.TokenAuthenticator;
 import io.moquette.spi.security.Tokenor;
 import io.moquette.spi.impl.subscriptions.Topic;
+import org.json.simple.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import sun.misc.BASE64Encoder;
@@ -241,6 +242,21 @@ public class MemoryMessagesStore implements IMessagesStore {
                 }
             } else {
                 LOG.error("Channel not exist");
+            }
+        } else if(type == ProtoConstants.ConversationType.ConversationType_Moment_Feed) {
+            notifyReceivers.add(fromUser);
+            for (FriendData fd : getFriendList(fromUser, 0)) {
+                if (fd.getState() == 0) {
+                    notifyReceivers.add(fd.getFriendUid());
+                }
+            }
+        } else if(type == ProtoConstants.ConversationType.ConversationType_Moment_Comment) {
+            notifyReceivers.add(fromUser);
+            //Todo here!!!!
+            for (FriendData fd : getFriendList(fromUser, 0)) {
+                if (fd.getState() == 0) {
+                    notifyReceivers.add(fd.getFriendUid());
+                }
             }
         }
 
