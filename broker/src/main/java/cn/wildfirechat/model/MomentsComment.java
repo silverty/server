@@ -1,14 +1,50 @@
 package cn.wildfirechat.model;
 
 import cn.wildfirechat.proto.ProtoConstants;
+import cn.wildfirechat.proto.WFCMessage;
+import com.google.gson.Gson;
 
 import java.util.List;
 
 public class MomentsComment {
+    private static class CommentContent {
+        //feedId
+        public long f;
+        //type
+        public int t;
+        //content
+        public String c;
+        //media urls
+        public List<String> m;
+        //to replyTo
+        public String r;
+        //extra
+        public String e;
+    }
+
+    public static MomentsComment fromMessage(WFCMessage.Message msg) {
+        MomentsComment feed = new MomentsComment();
+        feed.sender = msg.getFromUser();
+        feed.serverTime = msg.getServerTimestamp();
+        feed.commentId = msg.getMessageId();
+
+        CommentContent content = new Gson().fromJson(msg.getContent().getData().toString(), CommentContent.class);
+        if (content != null) {
+            feed.feedId = content.f;
+            feed.type = content.t;
+            feed.text = content.c;
+            feed.mediaUrls = content.m;
+            feed.replyTo = content.r;
+            feed.extra = content.e;
+
+        }
+        return feed;
+    }
+
     private long feedId;
     private long commentId;
     private String sender;
-    private ProtoConstants.WFMContentType type;
+    private int /*ProtoConstants.WFMContentType*/ type;
     private String text;
     private List<String> mediaUrls;
     private String replyTo;
@@ -39,12 +75,12 @@ public class MomentsComment {
         this.sender = sender;
     }
 
-    public ProtoConstants.WFMContentType getType() {
-        return type;
+    public void setType(int type) {
+        this.type = type;
     }
 
-    public void setType(ProtoConstants.WFMContentType type) {
-        this.type = type;
+    public int getType() {
+        return type;
     }
 
     public String getText() {

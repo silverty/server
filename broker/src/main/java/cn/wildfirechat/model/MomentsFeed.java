@@ -18,6 +18,8 @@ public class MomentsFeed {
         public List<String> to;
         //excloud users
         public List<String> ex;
+        //extra
+        public String e;
     }
 
     private long feedId;
@@ -65,6 +67,7 @@ public class MomentsFeed {
             feed.mediaUrls = content.m;
             feed.toUsers = content.to;
             feed.exUsers = content.ex;
+            feed.extra = content.e;
 
         }
         return feed;

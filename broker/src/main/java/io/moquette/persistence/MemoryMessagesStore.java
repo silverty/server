@@ -16,6 +16,8 @@
 
 package io.moquette.persistence;
 
+import cn.wildfirechat.model.MomentsComment;
+import cn.wildfirechat.model.MomentsFeed;
 import cn.wildfirechat.proto.ProtoConstants;
 import cn.wildfirechat.proto.WFCMessage;
 import com.google.protobuf.ByteString;
@@ -245,19 +247,51 @@ public class MemoryMessagesStore implements IMessagesStore {
             }
         } else if(type == ProtoConstants.ConversationType.ConversationType_Moment_Feed) {
             notifyReceivers.add(fromUser);
-            for (FriendData fd : getFriendList(fromUser, 0)) {
-                if (fd.getState() == 0) {
-                    notifyReceivers.add(fd.getFriendUid());
+            MomentsFeed feed = MomentsFeed.fromMessage(message);
+            if (feed.getToUsers() != null && feed.getToUsers().size() > 0) {
+                notifyReceivers.addAll(feed.getToUsers());
+            } else {
+                for (FriendData fd : getFriendList(fromUser, 0)) {
+                    if (fd.getState() == 0) {
+                        notifyReceivers.add(fd.getFriendUid());
+                    }
                 }
+            }
+            if (feed.getExUsers() != null) {
+                notifyReceivers.removeAll(feed.getExUsers());
             }
         } else if(type == ProtoConstants.ConversationType.ConversationType_Moment_Comment) {
             notifyReceivers.add(fromUser);
-            //Todo here!!!!
-            for (FriendData fd : getFriendList(fromUser, 0)) {
-                if (fd.getState() == 0) {
-                    notifyReceivers.add(fd.getFriendUid());
+
+            MomentsComment comment = MomentsComment.fromMessage(message);
+            WFCMessage.Message feedMsg = getMessage(comment.getFeedId());
+            MomentsFeed feed = MomentsFeed.fromMessage(feedMsg);
+
+
+            ArrayList<String> feedTargets = new ArrayList<>();
+            if (feed.getToUsers() != null && feed.getToUsers().size() > 0) {
+                feedTargets.addAll(feed.getToUsers());
+            } else {
+                for (FriendData fd : getFriendList(fromUser, 0)) {
+                    if (fd.getState() == 0) {
+                        feedTargets.add(fd.getFriendUid());
+                    }
                 }
             }
+            if (feed.getExUsers() != null) {
+                feedTargets.removeAll(feed.getExUsers());
+            }
+
+
+            ArrayList<String> commentTargets = new ArrayList<>();
+            for (FriendData fd : getFriendList(fromUser, 0)) {
+                if (fd.getState() == 0) {
+                    commentTargets.add(fd.getFriendUid());
+                }
+            }
+
+            commentTargets.retainAll(feedTargets);
+            notifyReceivers.addAll(commentTargets);
         }
 
         if (message.getContent().getPersistFlag() == Transparent) {
