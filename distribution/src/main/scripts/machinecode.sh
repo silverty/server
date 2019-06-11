@@ -33,4 +33,4 @@ export JAVA
 WILDFIRECHAT_PATH=$WILDFIRECHAT_HOME/
 
 
-$JAVA  -cp "$WILDFIRECHAT_HOME/lib/*" cn.wildfirechat.server.MechineCode $1 $2
+$JAVA  -cp "$WILDFIRECHAT_HOME/lib/*" cn.wildfirechat.server.MachineCode $1 $2

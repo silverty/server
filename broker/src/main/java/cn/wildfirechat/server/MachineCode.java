@@ -12,7 +12,7 @@ import win.liyufan.im.Utility;
 
 import java.util.Base64;
 
-public class MechineCode {
+public class MachineCode {
     public static void main(String[] args) throws Exception {
         for (String arg: args
              ) {
