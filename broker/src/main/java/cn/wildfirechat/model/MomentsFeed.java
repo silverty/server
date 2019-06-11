@@ -7,13 +7,19 @@ import com.google.gson.Gson;
 import java.util.List;
 
 public class MomentsFeed {
+    public static class MediaEntry {
+        public String m;
+        public int w;
+        public int h;
+    }
     private static class FeedContent {
+
         //type
         public int t;
         //content
         public String c;
         //media urls
-        public List<String> m;
+        public List<MediaEntry> ms;
         //to users
         public List<String> to;
         //excloud users
@@ -26,7 +32,7 @@ public class MomentsFeed {
     private String sender;
     private int /*ProtoConstants.WFMContentType*/ type;
     private String text;
-    private List<String> mediaUrls;
+    public List<MediaEntry> medias;
     private List<String> toUsers;
     private List<String> exUsers;
 
@@ -60,11 +66,12 @@ public class MomentsFeed {
         feed.serverTime = msg.getServerTimestamp();
         feed.feedId = msg.getMessageId();
 
-        FeedContent content = new Gson().fromJson(msg.getContent().getData().toString(), FeedContent.class);
+
+        FeedContent content = new Gson().fromJson(new String(msg.getContent().getData().toByteArray()), FeedContent.class);
         if (content != null) {
             feed.type = content.t;
             feed.text = content.c;
-            feed.mediaUrls = content.m;
+            feed.medias = content.ms;
             feed.toUsers = content.to;
             feed.exUsers = content.ex;
             feed.extra = content.e;
@@ -101,12 +108,12 @@ public class MomentsFeed {
         this.text = text;
     }
 
-    public List<String> getMediaUrls() {
-        return mediaUrls;
+    public List<MediaEntry> getMedias() {
+        return medias;
     }
 
-    public void setMediaUrls(List<String> mediaUrls) {
-        this.mediaUrls = mediaUrls;
+    public void setMedias(List<MediaEntry> medias) {
+        this.medias = medias;
     }
 
     public List<String> getMentionedUser() {
