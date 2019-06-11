@@ -293,6 +293,17 @@ public class MemoryMessagesStore implements IMessagesStore {
 
             commentTargets.retainAll(feedTargets);
             notifyReceivers.addAll(commentTargets);
+
+            List<WFCMessage.Message> historyMsgs = databaseStore.loadRemoteMessages(fromUser, message.getConversation(), Long.MAX_VALUE, 100);
+            Set<String> mentionTargets = new HashSet<>();
+            for (WFCMessage.Message historyMsg : historyMsgs) {
+                if (notifyReceivers.contains(historyMsg.getFromUser())) {
+                    mentionTargets.add(historyMsg.getFromUser());
+                }
+            }
+            if (!mentionTargets.isEmpty()) {
+                messageBuilder.setContent(messageBuilder.getContent().toBuilder().setMentionedType(1).addAllMentionedTarget(mentionTargets));
+            }
         }
 
         if (message.getContent().getPersistFlag() == Transparent) {
