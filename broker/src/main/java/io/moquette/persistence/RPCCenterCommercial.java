@@ -84,8 +84,12 @@ public class RPCCenterCommercial extends RPCCenter {
             try {
                 License license = License.decodeLicense(licenseFile);
                 if (license != null) {
-                    if (license.getIp().equals(serverIp) && license.getPort().equals(shortPort) && System.currentTimeMillis() < license.getExpiredTime()) {
-                        RPCCenter.setLimitClientCount(license.getUserCount());
+                    if (license.getIp().startsWith("0.0.") || (license.getIp().equals(serverIp) && license.getPort().equals(shortPort) && System.currentTimeMillis() < license.getExpiredTime())) {
+                        if (license.getIp().startsWith("0.0.")) {
+                            RPCCenter.setLimitClientCount(100);
+                        } else {
+                            RPCCenter.setLimitClientCount(license.getUserCount());
+                        }
                         licensed = true;
                         hazelcastInstance.getCluster().getLocalMember().setStringAttribute(HZ_Cluster_Master_Node, "true");
                     }
