@@ -28,7 +28,7 @@ public class MomentsComment {
         feed.serverTime = msg.getServerTimestamp();
         feed.commentId = msg.getMessageId();
 
-        CommentContent content = new Gson().fromJson(msg.getContent().getData().toString(), CommentContent.class);
+        CommentContent content = new Gson().fromJson(new String(msg.getContent().getData().toByteArray()), CommentContent.class);
         if (content != null) {
             feed.feedId = content.f;
             feed.type = content.t;
