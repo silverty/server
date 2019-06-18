@@ -28,6 +28,10 @@ message GroupInfo {
     optional string extra = 7;
     optional int64 update_dt = 8;
     optional int64 member_update_dt = 9;
+    optional int32 mute = 10;
+    optional int32 join_type = 11;
+    optional int32 private_chat = 12;
+    optional int32 searchable = 13;
 }
 
 
