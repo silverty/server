@@ -139,25 +139,11 @@ public class NettyAcceptor implements ServerAcceptor {
 
         final NettyMQTTHandler mqttHandler = new NettyMQTTHandler(processor);
 
-        final boolean useFineMetrics = Boolean.parseBoolean(props.getProperty(METRICS_ENABLE_PROPERTY_NAME, "false"));
-        if (useFineMetrics) {
-            DropWizardMetricsHandler metricsHandler = new DropWizardMetricsHandler();
-            metricsHandler.init(props);
-            this.metrics = Optional.of(metricsHandler);
-        } else {
-            this.metrics = Optional.empty();
-        }
+        this.metrics = Optional.empty();
 
-        final boolean useBugSnag = Boolean.parseBoolean(props.getProperty(BUGSNAG_ENABLE_PROPERTY_NAME, "false"));
-        if (useBugSnag) {
-            BugSnagErrorsHandler bugSnagHandler = new BugSnagErrorsHandler();
-            bugSnagHandler.init(props);
-            this.errorsCather = Optional.of(bugSnagHandler);
-        } else {
-            this.errorsCather = Optional.empty();
-        }
+        this.errorsCather = Optional.empty();
+
         initializePlainTCPTransport(mqttHandler, props);
-        initializeWebSocketTransport(mqttHandler, props);
         String sslTcpPortProp = props.getProperty(BrokerConstants.SSL_PORT_PROPERTY_NAME);
         String wssPortProp = props.getProperty(BrokerConstants.WSS_PORT_PROPERTY_NAME);
         if (sslTcpPortProp != null || wssPortProp != null) {
@@ -234,42 +220,6 @@ public class NettyAcceptor implements ServerAcceptor {
                 if (metrics.isPresent()) {
                     pipeline.addLast("wizardMetrics", metrics.get());
                 }
-                pipeline.addLast("handler", handler);
-            }
-        });
-    }
-
-    private void initializeWebSocketTransport(final NettyMQTTHandler handler, IConfig props) throws IOException {
-        LOG.info("Configuring Websocket MQTT transport");
-        String webSocketPortProp = props.getProperty(WEB_SOCKET_PORT_PROPERTY_NAME, DISABLED_PORT_BIND);
-        if (DISABLED_PORT_BIND.equals(webSocketPortProp)) {
-            // Do nothing no WebSocket configured
-            LOG.info("Property {} has been setted to {}. Websocket MQTT will be disabled",
-                BrokerConstants.WEB_SOCKET_PORT_PROPERTY_NAME, DISABLED_PORT_BIND);
-            return;
-        }
-        int port = Integer.parseInt(webSocketPortProp);
-
-        final MoquetteIdleTimeoutHandler timeoutHandler = new MoquetteIdleTimeoutHandler();
-
-        String host = props.getProperty(BrokerConstants.HOST_PROPERTY_NAME);
-        initFactory(host, port, "Websocket MQTT", new PipelineInitializer() {
-
-            @Override
-            void init(ChannelPipeline pipeline) {
-                pipeline.addLast(new HttpServerCodec());
-                pipeline.addLast("aggregator", new HttpObjectAggregator(65536));
-                pipeline.addLast("webSocketHandler",
-                        new WebSocketServerProtocolHandler("/org/fusesource/mqtt", MQTT_SUBPROTOCOL_CSV_LIST));
-                pipeline.addLast("ws2bytebufDecoder", new WebSocketFrameToByteBufDecoder());
-                pipeline.addLast("bytebuf2wsEncoder", new ByteBufToWebSocketFrameEncoder());
-                pipeline.addFirst("idleStateHandler", new IdleStateHandler(nettyChannelTimeoutSeconds, 0, 0));
-                pipeline.addAfter("idleStateHandler", "idleEventHandler", timeoutHandler);
-                pipeline.addFirst("bytemetrics", new BytesMetricsHandler(m_bytesMetricsCollector));
-                pipeline.addLast("decoder", new MqttDecoder());
-                pipeline.addLast("encoder", MqttEncoder.INSTANCE);
-                pipeline.addLast("metrics", new MessageMetricsHandler(m_metricsCollector));
-                pipeline.addLast("messageLogger", new MQTTMessageLogger());
                 pipeline.addLast("handler", handler);
             }
         });

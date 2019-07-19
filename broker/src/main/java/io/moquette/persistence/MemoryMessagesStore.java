@@ -49,10 +49,9 @@ import java.util.function.Consumer;
 
 
 import static cn.wildfirechat.proto.ProtoConstants.ChannelStatus.Channel_Status_Destoryed;
+import static cn.wildfirechat.proto.ProtoConstants.GroupMemberType.*;
 import static cn.wildfirechat.proto.ProtoConstants.ModifyChannelInfoType.*;
-import static cn.wildfirechat.proto.ProtoConstants.ModifyGroupInfoType.Modify_Group_Extra;
-import static cn.wildfirechat.proto.ProtoConstants.ModifyGroupInfoType.Modify_Group_Name;
-import static cn.wildfirechat.proto.ProtoConstants.ModifyGroupInfoType.Modify_Group_Portrait;
+import static cn.wildfirechat.proto.ProtoConstants.ModifyGroupInfoType.*;
 import static cn.wildfirechat.proto.ProtoConstants.PersistFlag.Transparent;
 import static io.moquette.BrokerConstants.*;
 import static io.moquette.server.Constants.MAX_CHATROOM_MESSAGE_QUEUE;
@@ -62,7 +61,6 @@ import static win.liyufan.im.MyInfoType.*;
 public class MemoryMessagesStore implements IMessagesStore {
     private static final String MESSAGES_MAP = "messages_map";
     private static final String GROUPS_MAP = "groups_map";
-    private static final String GROUP_ID_COUNTER = "group_id_counter";
     static int dumy = 0;
     static final String GROUP_MEMBERS = "group_members";
 
@@ -83,6 +81,8 @@ public class MemoryMessagesStore implements IMessagesStore {
     private static final String CHANNELS = "channels_map";
 
     private static final String CHANNEL_LISTENERS = "channel_listeners";
+
+    private static boolean IS_MESSAGE_ROAMING = true;
 
     static final String USER_ROBOTS = "user_robots";
     static final String USER_THINGS = "user_things";
@@ -117,20 +117,17 @@ public class MemoryMessagesStore implements IMessagesStore {
     MemoryMessagesStore(Server server, DatabaseStore databaseStore) {
         m_Server = server;
         this.databaseStore = databaseStore;
+        IS_MESSAGE_ROAMING = "1".equals(m_Server.getConfig().getProperty(MESSAGE_ROAMING));
     }
 
     @Override
     public void initStore() {
-        //TODO reload data from mysql
-        HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
-        MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(MemoryMessagesStore.GROUP_MEMBERS);
-        if (groupMembers.size() == 0) {
-            databaseStore.reloadGroupMemberFromDB(hzInstance);
-            databaseStore.reloadFriendsFromDB(hzInstance);
-            databaseStore.reloadFriendRequestsFromDB(hzInstance);
-        }
-
         updateSensitiveWord();
+    }
+
+    private Collection<WFCMessage.GroupMember> loadGroupMemberFromDB(HazelcastInstance hzInstance, String groupId) {
+        Collection<WFCMessage.GroupMember> members = databaseStore.reloadGroupMemberFromDB(hzInstance, groupId);
+        return members;
     }
 
     private void updateSensitiveWord() {
@@ -196,8 +193,11 @@ public class MemoryMessagesStore implements IMessagesStore {
             } else {
                 MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
                 Collection<WFCMessage.GroupMember> members = groupMembers.get(message.getConversation().getTarget());
+                if (members == null || members.size() == 0) {
+                    members = loadGroupMemberFromDB(hzInstance, message.getConversation().getTarget());
+                }
                 for (WFCMessage.GroupMember member : members) {
-                    if (member.getType() != ProtoConstants.GroupMemberType.GroupMemberType_Removed) {
+                    if (member.getType() != GroupMemberType_Removed) {
                         notifyReceivers.add(member.getMemberId());
                     }
                 }
@@ -317,6 +317,10 @@ public class MemoryMessagesStore implements IMessagesStore {
                 });
             }
 
+            boolean noRoaming = false;
+            if (pullType == ProtoConstants.PullType.Pull_Normal && fromMessageId == 0 && !IS_MESSAGE_ROAMING) {
+                noRoaming = true;
+            }
             while (true) {
                 Map.Entry<Long, Long> entry = maps.higherEntry(current);
                 if (entry == null) {
@@ -334,6 +338,10 @@ public class MemoryMessagesStore implements IMessagesStore {
                             if (!bundle.getMessage().getConversation().getTarget().equals(chatroomId)) {
                                 continue;
                             }
+                        }
+
+                        if (noRoaming && (System.currentTimeMillis() - bundle.getMessage().getServerTimestamp() > 5 * 60 * 1000)) {
+                            continue;
                         }
 
                         size += bundle.getMessage().getSerializedSize();
@@ -603,19 +611,25 @@ public class MemoryMessagesStore implements IMessagesStore {
         mIMap.put(groupId, groupInfo);
         MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
 
+        List<WFCMessage.GroupMember> updatedMemberList = new ArrayList<>();
         for (WFCMessage.GroupMember member : memberList) {
-            member = member.toBuilder().setUpdateDt(dt).build();
+            if (member.getMemberId().equals(groupInfo.getOwner())) {
+                member = member.toBuilder().setUpdateDt(dt).setType(ProtoConstants.GroupMemberType.GroupMemberType_Owner).build();
+            } else {
+                member = member.toBuilder().setUpdateDt(dt).build();
+            }
             groupMembers.put(groupId, member);
+            updatedMemberList.add(member);
         }
 
-        databaseStore.persistGroupMember(groupId, memberList);
+        databaseStore.persistGroupMember(groupId, updatedMemberList);
 
         return groupInfo;
     }
 
 
     @Override
-    public ErrorCode addGroupMembers(String operator, String groupId, List<WFCMessage.GroupMember> memberList) {
+    public ErrorCode addGroupMembers(String operator, boolean isAdmin, String groupId, List<WFCMessage.GroupMember> memberList) {
         HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
         IMap<String, WFCMessage.GroupInfo> mIMap = hzInstance.getMap(GROUPS_MAP);
 
@@ -623,11 +637,38 @@ public class MemoryMessagesStore implements IMessagesStore {
         if (groupInfo == null) {
             return ErrorCode.ERROR_CODE_NOT_EXIST;
         }
-        if (groupInfo.getType() == ProtoConstants.GroupType.GroupType_Restricted && (groupInfo.getOwner() == null || !groupInfo.getOwner().equals(operator))) {
-            return ErrorCode.ERROR_CODE_NOT_RIGHT;
-        }
 
-        MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
+
+        if (!isAdmin) {
+            boolean isMember = false;
+            boolean isManager = false;
+            WFCMessage.GroupMember gm = getGroupMember(groupId, operator);
+            if (gm != null) {
+                if (gm.getType() == GroupMemberType_Removed && !(memberList.size() == 1 && operator.equals(memberList.get(0).getMemberId()))) {
+                    return ErrorCode.ERROR_CODE_NOT_IN_GROUP;
+                } else if (gm.getType() == GroupMemberType_Silent) {
+                    return ErrorCode.ERROR_CODE_NOT_RIGHT;
+                }
+                isManager = (gm.getType() == GroupMemberType_Manager || gm.getType() == GroupMemberType_Owner);
+
+                if (gm.getType() != GroupMemberType_Removed) {
+                    isMember = true;
+                }
+            }
+
+            if (groupInfo.getType() == ProtoConstants.GroupType.GroupType_Restricted && ((groupInfo.getOwner() == null || !groupInfo.getOwner().equals(operator)) && !isManager)) {
+                if (groupInfo.getJoinType() == 2) {
+                    return ErrorCode.ERROR_CODE_NOT_RIGHT;
+                } else if (groupInfo.getJoinType() == 1) {
+                    if (memberList.size() == 1 && operator.equals(memberList.get(0).getMemberId()))
+                    return ErrorCode.ERROR_CODE_NOT_RIGHT;
+                }
+            }
+
+            if (!isMember && !(memberList.size() == 1 && operator.equals(memberList.get(0).getMemberId()))) {
+                return ErrorCode.ERROR_CODE_NOT_IN_GROUP;
+            }
+        }
 
         long updateDt = System.currentTimeMillis();
 
@@ -640,7 +681,13 @@ public class MemoryMessagesStore implements IMessagesStore {
         }
         memberList = tmp;
 
-        for (WFCMessage.GroupMember member : groupMembers.get(groupId)) {
+        MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
+        Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
+        if (members == null || members.size() == 0) {
+            members = loadGroupMemberFromDB(hzInstance, groupId);
+        }
+
+        for (WFCMessage.GroupMember member : members) {
             if (newInviteUsers.contains(member.getMemberId())) {
                 groupMembers.remove(groupId, member);
             }
@@ -652,7 +699,7 @@ public class MemoryMessagesStore implements IMessagesStore {
 
         int count = 0;
         for (WFCMessage.GroupMember member : groupMembers.get(groupId)) {
-            if (member.getType() != ProtoConstants.GroupMemberType.GroupMemberType_Removed) {
+            if (member.getType() != GroupMemberType_Removed) {
                 count++;
             }
         }
@@ -664,7 +711,7 @@ public class MemoryMessagesStore implements IMessagesStore {
     }
 
     @Override
-    public ErrorCode kickoffGroupMembers(String operator, String groupId, List<String> memberList) {
+    public ErrorCode kickoffGroupMembers(String operator, boolean isAdmin, String groupId, List<String> memberList) {
         HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
         IMap<String, WFCMessage.GroupInfo> mIMap = hzInstance.getMap(GROUPS_MAP);
 
@@ -672,8 +719,8 @@ public class MemoryMessagesStore implements IMessagesStore {
         if (groupInfo == null) {
             return ErrorCode.ERROR_CODE_NOT_EXIST;
         }
-        if ((groupInfo.getType() == ProtoConstants.GroupType.GroupType_Restricted || groupInfo.getType() == ProtoConstants.GroupType.GroupType_Normal)
-            && (groupInfo.getOwner() == null || !groupInfo.getOwner().equals(operator))) {
+        if (!isAdmin && ((groupInfo.getType() == ProtoConstants.GroupType.GroupType_Restricted || groupInfo.getType() == ProtoConstants.GroupType.GroupType_Normal)
+            && (groupInfo.getOwner() == null || !groupInfo.getOwner().equals(operator)))) {
             return ErrorCode.ERROR_CODE_NOT_RIGHT;
         }
 
@@ -682,15 +729,23 @@ public class MemoryMessagesStore implements IMessagesStore {
         int removeCount = 0;
         long updateDt = System.currentTimeMillis();
         ArrayList<WFCMessage.GroupMember> list = new ArrayList<>();
-        List<WFCMessage.GroupMember> allMembers = new ArrayList<>(groupMembers.get(groupId));
+        Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
+        if (members == null || members.size() == 0) {
+            members = loadGroupMemberFromDB(hzInstance, groupId);
+        }
+
+        List<WFCMessage.GroupMember> allMembers = new ArrayList<>(members);
+
+        List<String> removedIds = new ArrayList<>();
         for (WFCMessage.GroupMember member : allMembers) {
             if (memberList.contains(member.getMemberId())) {
                 boolean removed = groupMembers.remove(groupId, member);
                 if (removed) {
                     removeCount++;
-                    member = member.toBuilder().setType(ProtoConstants.GroupMemberType.GroupMemberType_Removed).setUpdateDt(updateDt).build();
+                    member = member.toBuilder().setType(GroupMemberType_Removed).setUpdateDt(updateDt).build();
                     groupMembers.put(groupId, member);
                     list.add(member);
+                    removedIds.add(member.getMemberId());
                 }
             }
         }
@@ -701,7 +756,21 @@ public class MemoryMessagesStore implements IMessagesStore {
             mIMap.put(groupId, groupInfo.toBuilder().setMemberUpdateDt(updateDt).setUpdateDt(updateDt).setMemberCount(groupInfo.getMemberCount() - removeCount).build());
         }
 
+        removeFavGroup(groupId, removedIds);
+
         return ErrorCode.ERROR_CODE_SUCCESS;
+    }
+
+    void removeFavGroup(String groupId, List<String> memberIds) {
+        HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
+        MultiMap<String, WFCMessage.UserSettingEntry> userSettingMap = hzInstance.getMultiMap(USER_SETTING);
+
+        databaseStore.removeFavGroup(groupId, memberIds);
+
+        for (String member : memberIds) {
+            userSettingMap.remove(member);
+        }
+
     }
 
     @Override
@@ -712,8 +781,11 @@ public class MemoryMessagesStore implements IMessagesStore {
         WFCMessage.GroupInfo groupInfo = mIMap.get(groupId);
         if (groupInfo == null) {
             MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
-            for (WFCMessage.GroupMember member : groupMembers.get(groupId)
-                ) {
+            Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
+            if (members == null || members.size() == 0) {
+                members = loadGroupMemberFromDB(hzInstance, groupId);
+            }
+            for (WFCMessage.GroupMember member :members) {
                 if (member.getMemberId().equals(operator)) {
                     groupMembers.remove(groupId, member);
                     break;
@@ -729,8 +801,11 @@ public class MemoryMessagesStore implements IMessagesStore {
 
         long updateDt = System.currentTimeMillis();
         boolean removed = false;
-        for (WFCMessage.GroupMember member : groupMembers.get(groupId)
-            ) {
+        Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
+        if (members == null || members.size() == 0) {
+            members = loadGroupMemberFromDB(hzInstance, groupId);
+        }
+        for (WFCMessage.GroupMember member : members) {
             if (member.getMemberId().equals(operator)) {
                 removed = groupMembers.remove(groupId, member);
                 if (removed) {
@@ -739,7 +814,7 @@ public class MemoryMessagesStore implements IMessagesStore {
                     databaseStore.persistGroupMember(groupId, list);
 
                     databaseStore.updateGroupMemberCountDt(groupId, groupInfo.getMemberCount()-1, updateDt);
-                    member = member.toBuilder().setType(ProtoConstants.GroupMemberType.GroupMemberType_Removed).setUpdateDt(updateDt).build();
+                    member = member.toBuilder().setType(GroupMemberType_Removed).setUpdateDt(updateDt).build();
                     groupMembers.put(groupId, member);
                 }
                 break;
@@ -749,6 +824,8 @@ public class MemoryMessagesStore implements IMessagesStore {
         if (removed) {
             mIMap.put(groupId, groupInfo.toBuilder().setMemberUpdateDt(updateDt).setUpdateDt(updateDt).setMemberCount(groupInfo.getMemberCount() - 1).build());
         }
+
+        removeFavGroup(groupId, Arrays.asList(operator));
         return ErrorCode.ERROR_CODE_SUCCESS;
     }
 
@@ -774,16 +851,29 @@ public class MemoryMessagesStore implements IMessagesStore {
 
         MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
 
+        Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
+        if (members == null || members.size() == 0) {
+            members = loadGroupMemberFromDB(hzInstance, groupId);
+        }
+
         groupMembers.remove(groupId);
         mIMap.remove(groupId);
 
         databaseStore.removeGroupMemberFromDB(groupId);
 
+        ArrayList<String> ids = new ArrayList<>();
+        if (members != null) {
+            for (WFCMessage.GroupMember member : members) {
+                ids.add(member.getMemberId());
+            }
+        }
+        removeFavGroup(groupId, ids);
+
         return ErrorCode.ERROR_CODE_SUCCESS;
     }
 
     @Override
-    public ErrorCode modifyGroupInfo(String operator, String groupId, int modifyType, String value) {
+    public ErrorCode modifyGroupInfo(String operator, String groupId, int modifyType, String value, boolean isAdmin) {
 
         HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
         IMap<String, WFCMessage.GroupInfo> mIMap = hzInstance.getMap(GROUPS_MAP);
@@ -794,21 +884,35 @@ public class MemoryMessagesStore implements IMessagesStore {
             return ErrorCode.ERROR_CODE_NOT_EXIST;
         }
 
-        if ((oldInfo.getType() == ProtoConstants.GroupType.GroupType_Restricted)
-            && (oldInfo.getOwner() == null || !oldInfo.getOwner().equals(operator))) {
-            return ErrorCode.ERROR_CODE_NOT_RIGHT;
-        }
-
-        if (oldInfo.getType() == ProtoConstants.GroupType.GroupType_Normal) {
-            if (oldInfo.getOwner() == null) {
-                return ErrorCode.ERROR_CODE_NOT_RIGHT;
-            }
-            if (!oldInfo.getOwner().equals(operator)) {
-                if (modifyType == Modify_Group_Extra) {
+        if (!isAdmin) {
+            if (oldInfo.getType() == ProtoConstants.GroupType.GroupType_Restricted) {
+                boolean isAllow = false;
+                if ((oldInfo.getOwner() != null && oldInfo.getOwner().equals(operator))) {
+                    isAllow = true;
+                } else {
+                    WFCMessage.GroupMember gm = getGroupMember(groupId, operator);
+                    if (gm != null && gm.getType() == GroupMemberType_Manager) {
+                        isAllow = true;
+                    }
+                }
+                if (!isAllow) {
                     return ErrorCode.ERROR_CODE_NOT_RIGHT;
                 }
             }
+
+            if (oldInfo.getType() == ProtoConstants.GroupType.GroupType_Normal) {
+                if (oldInfo.getOwner() == null) {
+                    return ErrorCode.ERROR_CODE_NOT_RIGHT;
+                }
+                if (!oldInfo.getOwner().equals(operator)) {
+                    if (modifyType == Modify_Group_Extra) {
+                        return ErrorCode.ERROR_CODE_NOT_RIGHT;
+                    }
+                }
+            }
         }
+
+
 
         WFCMessage.GroupInfo.Builder newInfoBuilder = oldInfo.toBuilder();
 
@@ -818,6 +922,16 @@ public class MemoryMessagesStore implements IMessagesStore {
             newInfoBuilder.setPortrait(value);
         else if(modifyType == Modify_Group_Extra)
             newInfoBuilder.setExtra(value);
+        else if(modifyType == Modify_Group_Mute)
+            newInfoBuilder.setMute(Integer.parseInt(value));
+        else if(modifyType == Modify_Group_JoinType)
+            newInfoBuilder.setJoinType(Integer.parseInt(value));
+        else if(modifyType == Modify_Group_PrivateChat)
+            newInfoBuilder.setPrivateChat(Integer.parseInt(value));
+        else if(modifyType == Modify_Group_Searchable)
+            newInfoBuilder.setSearchable(Integer.parseInt(value));
+        else
+            return ErrorCode.INVALID_PARAMETER;
 
 
         newInfoBuilder.setUpdateDt(System.currentTimeMillis());
@@ -843,8 +957,10 @@ public class MemoryMessagesStore implements IMessagesStore {
         long updateDt = System.currentTimeMillis();
         MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
         Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
-        for (WFCMessage.GroupMember member : members
-            ) {
+        if (members == null || members.size() == 0) {
+            members = loadGroupMemberFromDB(hzInstance, groupId);
+        }
+        for (WFCMessage.GroupMember member : members) {
             if (member.getMemberId().equals(operator)) {
                 groupMembers.remove(groupId, member);
                 member = member.toBuilder().setAlias(alias).setUpdateDt(updateDt).build();
@@ -910,9 +1026,39 @@ public class MemoryMessagesStore implements IMessagesStore {
         }
 
         MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
+        Collection<WFCMessage.GroupMember> memberCollection = groupMembers.get(groupId);
+        if (memberCollection == null || memberCollection.size() == 0) {
+            memberCollection = loadGroupMemberFromDB(hzInstance, groupId);
+        }
+        for (WFCMessage.GroupMember member:memberCollection) {
+            if (member.getUpdateDt() > maxDt) {
+                members.add(member);
+            }
+        }
 
-        members.addAll(groupMembers.get(groupId));
         return ErrorCode.ERROR_CODE_SUCCESS;
+    }
+
+    @Override
+    public WFCMessage.GroupMember getGroupMember(String groupId, String memberId) {
+        HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
+
+        MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
+
+        Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
+        if (members == null || members.size() == 0) {
+            members = loadGroupMemberFromDB(hzInstance, groupId);
+        }
+
+        if (members != null) {
+            for (WFCMessage.GroupMember gm : members) {
+                if (gm.getMemberId().equals(memberId)) {
+                    return gm;
+                }
+            }
+        }
+
+        return null;
     }
 
 
@@ -934,11 +1080,48 @@ public class MemoryMessagesStore implements IMessagesStore {
         }
 
         //check the new owner is in member list? is that necessary?
-
-        groupInfo = groupInfo.toBuilder().setOwner(newOwner).build();
+        long updateDt = System.currentTimeMillis();
+        groupInfo = groupInfo.toBuilder().setOwner(newOwner).setUpdateDt(updateDt).build();
 
         mIMap.set(groupId, groupInfo);
 
+        return ErrorCode.ERROR_CODE_SUCCESS;
+    }
+
+    @Override
+    public ErrorCode setGroupManager(String operator, String groupId, int type, List<String> userList, boolean isAdmin) {
+        HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
+        IMap<String, WFCMessage.GroupInfo> mIMap = hzInstance.getMap(GROUPS_MAP);
+
+
+        WFCMessage.GroupInfo groupInfo = mIMap.get(groupId);
+
+        if (groupInfo == null) {
+            return ErrorCode.ERROR_CODE_NOT_EXIST;
+        }
+
+        if (!isAdmin && (groupInfo.getType() == ProtoConstants.GroupType.GroupType_Restricted || groupInfo.getType() == ProtoConstants.GroupType.GroupType_Normal)
+            && (groupInfo.getOwner() == null || !groupInfo.getOwner().equals(operator))) {
+            return ErrorCode.ERROR_CODE_NOT_RIGHT;
+        }
+
+        long updateDt = System.currentTimeMillis();
+        MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
+        Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
+        if (members == null || members.size() == 0) {
+            members = loadGroupMemberFromDB(hzInstance, groupId);
+        }
+        for (WFCMessage.GroupMember member : members) {
+            if (userList.contains(member.getMemberId())) {
+                groupMembers.remove(groupId, member);
+                member = member.toBuilder().setType(type == 0 ? ProtoConstants.GroupMemberType.GroupMemberType_Normal : ProtoConstants.GroupMemberType.GroupMemberType_Manager).setUpdateDt(updateDt).build();
+                databaseStore.persistGroupMember(groupId, Arrays.asList(member));
+                groupMembers.put(groupId, member);
+//                userList.remove(member.getMemberId());
+            }
+        }
+
+        mIMap.put(groupId, groupInfo.toBuilder().setUpdateDt(updateDt).setMemberUpdateDt(updateDt).build());
         return ErrorCode.ERROR_CODE_SUCCESS;
     }
 
@@ -948,10 +1131,12 @@ public class MemoryMessagesStore implements IMessagesStore {
         MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
 
         Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
-
+        if (members == null || members.size() == 0) {
+            members = loadGroupMemberFromDB(hzInstance, groupId);
+        }
         for (WFCMessage.GroupMember member : members
             ) {
-            if (member.getMemberId().equals(memberId) && member.getType() != ProtoConstants.GroupMemberType.GroupMemberType_Removed)
+            if (member.getMemberId().equals(memberId) && member.getType() != GroupMemberType_Removed)
                 return true;
         }
 
@@ -959,19 +1144,43 @@ public class MemoryMessagesStore implements IMessagesStore {
     }
 
     @Override
-    public boolean isForbiddenInGroup(String memberId, String groupId) {
+    public ErrorCode canSendMessageInGroup(String memberId, String groupId) {
         HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
         MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
-
-        Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
-
-        for (WFCMessage.GroupMember member : members
-            ) {
-            if (member.getMemberId().equals(memberId) && member.getType() == ProtoConstants.GroupMemberType.GroupMemberType_Silent)
-                return true;
+        IMap<String, WFCMessage.GroupInfo> groups = hzInstance.getMap(GROUPS_MAP);
+        WFCMessage.GroupInfo groupInfo = groups.get(groupId);
+        boolean isMute = false;
+        if (groupInfo != null) {
+            if (groupInfo.getOwner().equals(memberId)) {
+                return ErrorCode.ERROR_CODE_SUCCESS;
+            }
+            isMute = groupInfo.getMute()>0;
         }
 
-        return false;
+        Collection<WFCMessage.GroupMember> members = groupMembers.get(groupId);
+        if (members == null || members.size() == 0) {
+            members = loadGroupMemberFromDB(hzInstance, groupId);
+        }
+        for (WFCMessage.GroupMember member : members
+            ) {
+            if (member.getMemberId().equals(memberId)) {
+                if (member.getType() == GroupMemberType_Silent) {
+                    return ErrorCode.ERROR_CODE_NOT_RIGHT;
+                }
+
+                if (isMute && member.getType() != GroupMemberType_Manager && member.getType() != GroupMemberType_Owner) {
+                    return ErrorCode.ERROR_CODE_GROUP_MUTED;
+                }
+
+                if (member.getMemberId().equals(memberId) && member.getType() == GroupMemberType_Removed) {
+                    return ErrorCode.ERROR_CODE_NOT_IN_GROUP;
+                }
+                break;
+            }
+
+        }
+
+        return ErrorCode.ERROR_CODE_SUCCESS;
     }
 
     @Override
@@ -1000,9 +1209,12 @@ public class MemoryMessagesStore implements IMessagesStore {
 
                 MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(GROUP_MEMBERS);
                 Collection<WFCMessage.GroupMember> members = groupMembers.get(message.getConversation().getTarget());
+                if (members == null || members.size() == 0) {
+                    members = loadGroupMemberFromDB(hzInstance, message.getConversation().getTarget());
+                }
                 for (WFCMessage.GroupMember member : members) {
                     if (member.getMemberId().equals(operatorId)) {
-                        if (member.getType() == ProtoConstants.GroupMemberType.GroupMemberType_Manager || member.getType() == ProtoConstants.GroupMemberType.GroupMemberType_Owner) {
+                        if (member.getType() == GroupMemberType_Manager || member.getType() == ProtoConstants.GroupMemberType.GroupMemberType_Owner) {
                             canRecall = true;
                         }
                         break;
@@ -1165,7 +1377,6 @@ public class MemoryMessagesStore implements IMessagesStore {
         } else {
             mUserMap.put(userId, status);
         }
-        databaseStore.updateUserStatus(userId, status);
         return ErrorCode.ERROR_CODE_SUCCESS;
     }
 
@@ -1347,8 +1558,8 @@ public class MemoryMessagesStore implements IMessagesStore {
 
         Collection<FriendData> friendDatas = friendsMap.get(fromUser);
 
-        if (friendDatas == null) {
-            return false;
+        if (friendDatas == null || friendDatas.size() == 0) {
+            friendDatas = loadFriend(friendsMap, fromUser);
         }
 
         for (FriendData friendData : friendDatas) {
@@ -1419,6 +1630,31 @@ public class MemoryMessagesStore implements IMessagesStore {
         }
     }
 
+    synchronized Collection<FriendData> loadFriend(MultiMap<String, FriendData> friendsMap, String userId) {
+        Collection<FriendData> friends = databaseStore.getPersistFriends(userId);
+        if (friends != null) {
+            for (FriendData friend : friends) {
+                friendsMap.put(userId, friend);
+            }
+        } else {
+            friends = new ArrayList<>();
+        }
+        return friends;
+    }
+
+    synchronized Collection<WFCMessage.FriendRequest> loadFriendRequest(MultiMap<String, WFCMessage.FriendRequest> requestMap, String userId) {
+        Collection<WFCMessage.FriendRequest> requests = databaseStore.getPersistFriendRequests(userId);
+        if (requests != null) {
+            for (WFCMessage.FriendRequest r : requests
+                ) {
+                requestMap.put(userId, r);
+            }
+        } else {
+            requests = new ArrayList<>();
+        }
+        return requests;
+    }
+
     @Override
     public List<FriendData> getFriendList(String userId, long version) {
         List<FriendData> out = new ArrayList<FriendData>();
@@ -1427,14 +1663,7 @@ public class MemoryMessagesStore implements IMessagesStore {
         MultiMap<String, FriendData> friendsMap = hzInstance.getMultiMap(USER_FRIENDS);
         Collection<FriendData> friends = friendsMap.get(userId);
         if (friends == null || friends.size() == 0) {
-            friends = databaseStore.getPersistFriends(userId);
-            if (friends != null) {
-                for (FriendData friend : friends) {
-                    friendsMap.put(userId, friend);
-                }
-            } else {
-                friends = new ArrayList<>();
-            }
+            friends = loadFriend(friendsMap, userId);
         }
 
         for (FriendData friend : friends) {
@@ -1454,15 +1683,7 @@ public class MemoryMessagesStore implements IMessagesStore {
         MultiMap<String, WFCMessage.FriendRequest> requestMap = hzInstance.getMultiMap(USER_FRIENDS_REQUEST);
         Collection<WFCMessage.FriendRequest> requests = requestMap.get(userId);
         if (requests == null || requests.size() == 0) {
-            requests = databaseStore.getPersistFriendRequests(userId);
-            if (requests != null) {
-                for (WFCMessage.FriendRequest request : requests) {
-                    if (request.getUpdateDt() > version)
-                        requestMap.put(userId, request);
-                }
-            } else {
-                requests = new ArrayList<>();
-            }
+            requests = loadFriendRequest(requestMap, userId);
         }
 
         for (WFCMessage.FriendRequest request : requests) {
@@ -1480,15 +1701,7 @@ public class MemoryMessagesStore implements IMessagesStore {
         MultiMap<String, WFCMessage.FriendRequest> requestMap = hzInstance.getMultiMap(USER_FRIENDS_REQUEST);
         Collection<WFCMessage.FriendRequest> requests = requestMap.get(userId);
         if (requests == null || requests.size() == 0) {
-            requests = databaseStore.getPersistFriendRequests(userId);
-            if (requests != null) {
-                for (WFCMessage.FriendRequest r : requests
-                    ) {
-                    requestMap.put(userId, r);
-                }
-            } else {
-                requests = new ArrayList<>();
-            }
+            requests = loadFriendRequest(requestMap, userId);
         }
 
         WFCMessage.FriendRequest existRequest = null;
@@ -1506,7 +1719,6 @@ public class MemoryMessagesStore implements IMessagesStore {
                     && System.currentTimeMillis() - existRequest.getUpdateDt() < 30 * 24 * 60 * 60 * 1000) {
                     return ErrorCode.ERROR_CODE_FRIEND_REQUEST_BLOCKED;
                 }
-                requestMap.remove(userId, existRequest);
             } else {
                 return ErrorCode.ERROR_CODE_FRIEND_ALREADY_REQUEST;
             }
@@ -1521,9 +1733,10 @@ public class MemoryMessagesStore implements IMessagesStore {
             .setUpdateDt(System.currentTimeMillis())
             .build();
 
-        requestMap.put(userId, newRequest);
-        requestMap.put(request.getTargetUid(), newRequest);
         databaseStore.persistOrUpdateFriendRequest(newRequest);
+        requestMap.remove(userId);
+        requestMap.remove(request.getTargetUid());
+
         head[0] = newRequest.getUpdateDt();
         return ErrorCode.ERROR_CODE_SUCCESS;
     }
@@ -1551,6 +1764,9 @@ public class MemoryMessagesStore implements IMessagesStore {
 
             FriendData friendData1 = null;
             Collection<FriendData> friendDatas = friendsMap.get(userId);
+            if (friendDatas == null || friendDatas.size() == 0) {
+                friendDatas = loadFriend(friendsMap, userId);
+            }
             for (FriendData fd : friendDatas) {
                 if (fd.getFriendUid().equals(request.getTargetUid())) {
                     friendData1 = fd;
@@ -1560,18 +1776,19 @@ public class MemoryMessagesStore implements IMessagesStore {
             if (friendData1 == null) {
                 friendData1 = new FriendData(userId, request.getTargetUid(), "", request.getStatus(), System.currentTimeMillis());
             } else {
-                friendsMap.remove(userId, friendData1);
                 friendData1.setState(request.getStatus());
                 friendData1.setTimestamp(System.currentTimeMillis());
             }
 
-            friendsMap.put(userId, friendData1);
             databaseStore.persistOrUpdateFriendData(friendData1);
 
             if (request.getStatus() != 2) {
                 FriendData friendData2 = null;
 
                 friendDatas = friendsMap.get(request.getTargetUid());
+                if (friendDatas == null || friendDatas.size() == 0) {
+                    friendDatas = loadFriend(friendsMap, request.getTargetUid());
+                }
                 for (FriendData fd : friendDatas) {
                     if (fd.getFriendUid().equals(userId)) {
                         friendData2 = fd;
@@ -1586,8 +1803,6 @@ public class MemoryMessagesStore implements IMessagesStore {
                     friendData2.setTimestamp(System.currentTimeMillis());
                 }
 
-
-                friendsMap.put(request.getTargetUid(), friendData2);
                 databaseStore.persistOrUpdateFriendData(friendData2);
 
                 heads[0] = friendData2.getTimestamp();
@@ -1595,19 +1810,15 @@ public class MemoryMessagesStore implements IMessagesStore {
                 heads[0] = 0;
             }
             heads[1] = friendData1.getTimestamp();
+            friendsMap.remove(userId);
+            friendsMap.remove(request.getTargetUid());
             return ErrorCode.ERROR_CODE_SUCCESS;
         }
 
         MultiMap<String, WFCMessage.FriendRequest> requestMap = hzInstance.getMultiMap(USER_FRIENDS_REQUEST);
         Collection<WFCMessage.FriendRequest> requests = requestMap.get(userId);
         if (requests == null || requests.size() == 0) {
-            requests = databaseStore.getPersistFriendRequests(userId);
-            if (requests != null) {
-                for (WFCMessage.FriendRequest r : requests
-                    ) {
-                    requestMap.put(userId, r);
-                }
-            }
+            requests = loadFriendRequest(requestMap, userId);
         }
 
         WFCMessage.FriendRequest existRequest = null;
@@ -1622,21 +1833,20 @@ public class MemoryMessagesStore implements IMessagesStore {
             if (System.currentTimeMillis() - existRequest.getUpdateDt() > 7 * 24 * 60 * 60 * 1000) {
                 return ErrorCode.ERROR_CODE_FRIEND_REQUEST_OVERTIME;
             } else {
-                requestMap.remove(userId, existRequest);
                 existRequest = existRequest.toBuilder().setStatus(ProtoConstants.FriendRequestStatus.RequestStatus_Accepted).setUpdateDt(System.currentTimeMillis()).build();
                 databaseStore.persistOrUpdateFriendRequest(existRequest);
-                requestMap.put(userId, existRequest);
-
-
                 MultiMap<String, FriendData> friendsMap = hzInstance.getMultiMap(USER_FRIENDS);
 
                 FriendData friendData1 = new FriendData(userId, request.getTargetUid(), "", 0, System.currentTimeMillis());
-                friendsMap.put(userId, friendData1);
                 databaseStore.persistOrUpdateFriendData(friendData1);
 
                 FriendData friendData2 = new FriendData(request.getTargetUid(), userId, "", 0, friendData1.getTimestamp());
-                friendsMap.put(request.getTargetUid(), friendData2);
                 databaseStore.persistOrUpdateFriendData(friendData2);
+
+                requestMap.remove(userId);
+                requestMap.remove(request.getTargetUid());
+                friendsMap.remove(userId);
+                friendsMap.remove(request.getTargetUid());
 
                 heads[0] = friendData2.getTimestamp();
                 heads[1] = friendData1.getTimestamp();
@@ -1657,6 +1867,10 @@ public class MemoryMessagesStore implements IMessagesStore {
 
         FriendData friendData = null;
         Collection<FriendData> friends = friendsMap.get(fromUser);
+        if (friends == null || friends.size() == 0) {
+            friends = loadFriend(friendsMap, fromUser);
+        }
+
         for (FriendData fd:friends) {
             if (fd.getFriendUid().equals(targetUserId)) {
                 friendData = fd;
@@ -1670,8 +1884,9 @@ public class MemoryMessagesStore implements IMessagesStore {
         friendData.setState(state);
         friendData.setTimestamp(System.currentTimeMillis());
 
-        friendsMap.put(fromUser, friendData);
+
         databaseStore.persistOrUpdateFriendData(friendData);
+        friendsMap.remove(fromUser);
 
         heads[0] = friendData.getTimestamp();
 
@@ -1685,6 +1900,10 @@ public class MemoryMessagesStore implements IMessagesStore {
 
         FriendData friendData = null;
         Collection<FriendData> friends = friendsMap.get(fromUser);
+        if (friends == null || friends.size() == 0) {
+            friends = loadFriend(friendsMap, fromUser);
+        }
+
         for (FriendData fd:friends) {
             if (fd.getFriendUid().equals(targetUserId)) {
                 friendData = fd;
@@ -1699,10 +1918,11 @@ public class MemoryMessagesStore implements IMessagesStore {
         friendData.setAlias(alias);
         friendData.setTimestamp(System.currentTimeMillis());
 
-        friendsMap.put(fromUser, friendData);
         databaseStore.persistOrUpdateFriendData(friendData);
 
         heads[0] = friendData.getTimestamp();
+
+        friendsMap.remove(fromUser);
 
         return ErrorCode.ERROR_CODE_SUCCESS;
     }
@@ -1738,35 +1958,43 @@ public class MemoryMessagesStore implements IMessagesStore {
     }
 
     @Override
-    public ErrorCode deleteFriend(String userId, String friendUid) {
+    public ErrorCode deleteFriend(String userId, String friendUid, long[] head) {
         HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
         MultiMap<String, FriendData> friendsMap = hzInstance.getMultiMap(USER_FRIENDS);
         Collection<FriendData> user1Friends = friendsMap.get(userId);
+        if (user1Friends == null || user1Friends.size() == 0) {
+            user1Friends = loadFriend(friendsMap, userId);
+        }
         for (FriendData data :
             user1Friends) {
             if (data.getFriendUid().equals(friendUid)) {
-                friendsMap.remove(userId, data);
+                long ts = System.currentTimeMillis();
+                head[0] = ts;
                 data.setState(1);
-                data.setTimestamp(System.currentTimeMillis());
-                friendsMap.put(userId, data);
+                data.setTimestamp(ts);
                 databaseStore.persistOrUpdateFriendData(data);
                 break;
             }
         }
 
         Collection<FriendData> user2Friends = friendsMap.get(friendUid);
+        if (user2Friends == null || user2Friends.size() == 0) {
+            user2Friends = loadFriend(friendsMap, friendUid);
+        }
         for (FriendData data :
             user2Friends) {
             if (data.getFriendUid().equals(userId)) {
-                friendsMap.remove(friendUid, data);
                 data.setState(1);
-                data.setTimestamp(System.currentTimeMillis());
-                friendsMap.put(friendUid, data);
+                long ts = System.currentTimeMillis();
+                head[1] = ts;
+                data.setTimestamp(ts);
                 databaseStore.persistOrUpdateFriendData(data);
                 break;
             }
         }
 
+        friendsMap.remove(userId);
+        friendsMap.remove(friendUid);
         return ErrorCode.ERROR_CODE_SUCCESS;
     }
 
@@ -2088,7 +2316,7 @@ public class MemoryMessagesStore implements IMessagesStore {
     public boolean addSensitiveWords(List<String> words) {
         for (String word :
             words) {
-            databaseStore.persistSensitiveWord(word);
+            databaseStore.persistSensitiveWord(word.toLowerCase());
         }
         lastUpdateSensitiveTime = 0;
         return true;
@@ -2157,15 +2385,10 @@ public class MemoryMessagesStore implements IMessagesStore {
         HazelcastInstance hzInstance = m_Server.getHazelcastInstance();
         MultiMap<String, FriendData> friendsMap = hzInstance.getMultiMap(USER_FRIENDS);
         Collection<FriendData> friends = friendsMap.get(userId);
-        long max = 0;
         if (friends == null || friends.size() == 0) {
-            friends = databaseStore.getPersistFriends(userId);
-            for (FriendData friend :
-                friends) {
-                friendsMap.put(userId, friend);
-            }
+            friends = loadFriend(friendsMap, userId);
         }
-
+        long max = 0;
         if (friends != null && friends.size() > 0) {
             for (FriendData friend :
                 friends) {
@@ -2184,11 +2407,7 @@ public class MemoryMessagesStore implements IMessagesStore {
         Collection<WFCMessage.FriendRequest> friendsReq = friendsReqMap.get(userId);
         long max = 0;
         if (friendsReq == null || friendsReq.size() == 0) {
-            friendsReq = databaseStore.getPersistFriendRequests(userId);
-            for (WFCMessage.FriendRequest req : friendsReq
-                 ) {
-                friendsReqMap.put(userId, req);
-            }
+            friendsReq = loadFriendRequest(friendsReqMap, userId);
         }
 
         if (friendsReq != null && friendsReq.size() > 0) {

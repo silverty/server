@@ -210,22 +210,26 @@ public class DatabaseStore {
         return 0;
     }
 
-    void reloadGroupMemberFromDB(HazelcastInstance hzInstance) {
+    synchronized Collection<WFCMessage.GroupMember>  reloadGroupMemberFromDB(HazelcastInstance hzInstance, String groupId) {
         MultiMap<String, WFCMessage.GroupMember> groupMembers = hzInstance.getMultiMap(MemoryMessagesStore.GROUP_MEMBERS);
+        if (groupMembers.get(groupId).size() > 0) {
+            return groupMembers.get(groupId);
+        }
 
         Connection connection = null;
         PreparedStatement statement = null;
         ResultSet rs = null;
         try {
             connection = DBUtil.getConnection();
-            String sql = "select `_gid`" +
-                ", `_mid`" +
+            String sql = "select `_mid`" +
                 ", `_alias`" +
                 ", `_type`" +
-                ", `_dt` from t_group_member";
+                ", `_dt` from t_group_member where _gid = ?";
             statement = connection.prepareStatement(sql);
 
+            statement.setString(1, groupId);
             int index;
+
 
             rs = statement.executeQuery();
             while (rs.next()) {
@@ -233,10 +237,6 @@ public class DatabaseStore {
                 index = 1;
 
                 String value = rs.getString(index++);
-                value = (value == null ? "" : value);
-                String groupId = value;
-
-                value = rs.getString(index++);
                 value = (value == null ? "" : value);
                 builder.setMemberId(value);
 
@@ -254,6 +254,7 @@ public class DatabaseStore {
                 WFCMessage.GroupMember member = builder.build();
                 groupMembers.put(groupId, member);
             }
+            return groupMembers.get(groupId);
         } catch (SQLException e) {
             // TODO Auto-generated catch block
             e.printStackTrace();
@@ -261,6 +262,7 @@ public class DatabaseStore {
         } finally {
             DBUtil.closeDB(connection, statement, rs);
         }
+        return new ArrayList<>();
     }
 
     void reloadFriendsFromDB(HazelcastInstance hzInstance) {
@@ -688,6 +690,43 @@ public class DatabaseStore {
         });
     }
 
+    void removeFavGroup(final String groupId, final List<String> memberIds) {
+        Connection connection = null;
+        PreparedStatement statement = null;
+        try {
+            connection = DBUtil.getConnection();
+
+            StringBuilder sb = new StringBuilder("update t_user_setting set _value = ?, _dt = ? where _uid in (");
+            for (int i = 0; i < memberIds.size(); i++) {
+                sb.append("?");
+                if (i != memberIds.size() - 1) {
+                    sb.append(",");
+                }
+            }
+            sb.append(")");
+
+            sb.append(" and _scope = 6 and _key = ?");
+
+            statement = connection.prepareStatement(sb.toString());
+            int index = 1;
+            statement.setString(index++, "0");
+            statement.setLong(index++, System.currentTimeMillis());
+            for (int i = 0; i < memberIds.size(); i++) {
+                statement.setString(index++, memberIds.get(i));
+            }
+            statement.setString(index++, groupId);
+
+            int count = statement.executeUpdate();
+            LOG.info("Update rows {}", count);
+        } catch (SQLException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+            Utility.printExecption(LOG, e);
+        } finally {
+            DBUtil.closeDB(connection, statement);
+        }
+    }
+
     void persistUserSetting(final String userId, WFCMessage.UserSettingEntry entry) {
         mScheduler.execute(()->{
             Connection connection = null;
@@ -793,7 +832,11 @@ public class DatabaseStore {
                     ", `_extra`" +
                     ", `_dt`" +
                     ", `_member_count`" +
-                    ", `_member_dt`) values(?, ?, ?, ?, ?, ?, ?, ?, ?)" +
+                    ", `_mute`" +
+                    ", `_join_type`" +
+                    ", `_private_chat`" +
+                    ", `_searchable`" +
+                    ", `_member_dt`) values(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)" +
                     " ON DUPLICATE KEY UPDATE " +
                     "`_name` = ?," +
                     "`_portrait` = ?," +
@@ -802,6 +845,10 @@ public class DatabaseStore {
                     "`_extra` = ?," +
                     "`_dt` = ?," +
                     "`_member_count` = ?," +
+                    "`_mute` = ?" +
+                    ", `_join_type` = ?" +
+                    ", `_private_chat` = ?" +
+                    ", `_searchable` = ?, " +
                     "`_member_dt` = ?";
 
 
@@ -816,6 +863,10 @@ public class DatabaseStore {
                 statement.setString(index++, groupInfo.getExtra());
                 statement.setLong(index++, groupInfo.getUpdateDt() == 0 ? System.currentTimeMillis() : groupInfo.getUpdateDt());
                 statement.setInt(index++, groupInfo.getMemberCount());
+                statement.setInt(index++, groupInfo.getMute());
+                statement.setInt(index++, groupInfo.getJoinType());
+                statement.setInt(index++, groupInfo.getPrivateChat());
+                statement.setInt(index++, groupInfo.getSearchable());
                 statement.setLong(index++, groupInfo.getMemberUpdateDt() == 0 ? System.currentTimeMillis() : groupInfo.getUpdateDt());
 
                 statement.setString(index++, groupInfo.getName());
@@ -825,6 +876,10 @@ public class DatabaseStore {
                 statement.setString(index++, groupInfo.getExtra());
                 statement.setLong(index++, groupInfo.getUpdateDt() == 0 ? System.currentTimeMillis() : groupInfo.getUpdateDt());
                 statement.setInt(index++, groupInfo.getMemberCount());
+                statement.setInt(index++, groupInfo.getMute());
+                statement.setInt(index++, groupInfo.getJoinType());
+                statement.setInt(index++, groupInfo.getPrivateChat());
+                statement.setInt(index++, groupInfo.getSearchable());
                 statement.setLong(index++, groupInfo.getMemberUpdateDt() == 0 ? System.currentTimeMillis() : groupInfo.getUpdateDt());
                 int count = statement.executeUpdate();
                 LOG.info("Update rows {}", count);
@@ -1155,6 +1210,10 @@ public class DatabaseStore {
                 ", `_dt`" +
                 ", `_member_count`" +
                 ", `_member_dt`" +
+                ", `_mute`" +
+                ", `_join_type`" +
+                ", `_private_chat`" +
+                ", `_searchable`" +
                 " from t_group  where `_gid` = ?";
 
             statement = connection.prepareStatement(sql);
@@ -1190,17 +1249,26 @@ public class DatabaseStore {
                 strValue = (strValue == null ? "" : strValue);
                 builder.setExtra(strValue);
 
-
-
                 long longValue = rs.getLong(index++);
                 builder.setUpdateDt(longValue);
-
 
                 intValue = rs.getInt(index++);
                 builder.setMemberCount(intValue);
 
                 longValue = rs.getLong(index++);
                 builder.setMemberUpdateDt(longValue);
+
+                intValue = rs.getInt(index++);
+                builder.setMute(intValue);
+
+                intValue = rs.getInt(index++);
+                builder.setJoinType(intValue);
+
+                intValue = rs.getInt(index++);
+                builder.setPrivateChat(intValue);
+
+                intValue = rs.getInt(index++);
+                builder.setSearchable(intValue);
 
                 return builder.build();
             }
@@ -1623,6 +1691,27 @@ public class DatabaseStore {
         });
     }
 
+    void deleteUserStatus(String userId) {
+        mScheduler.execute(()->{
+            Connection connection = null;
+            PreparedStatement statement = null;
+            try {
+                connection = DBUtil.getConnection();
+                String sql = "delete from t_user_status where _uid = ?";
+                statement = connection.prepareStatement(sql);
+                statement.setString(1, userId);
+                int count = statement.executeUpdate();
+                LOG.info("Update rows {}", count);
+            } catch (SQLException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+                Utility.printExecption(LOG, e);
+            } finally {
+                DBUtil.closeDB(connection, statement);
+            }
+        });
+    }
+
     void updateUserStatus(String userId, int status) {
         mScheduler.execute(()->{
             Connection connection = null;
@@ -1957,7 +2046,6 @@ public class DatabaseStore {
     }
 
     void persistFriendRequestUnreadStatus(String userId, long readDt, long updateDt) {
-        mScheduler.execute(()->{
             Connection connection = null;
             PreparedStatement statement = null;
             try {
@@ -1984,11 +2072,9 @@ public class DatabaseStore {
             } finally {
                 DBUtil.closeDB(connection, statement);
             }
-        });
     }
     //
     void persistOrUpdateFriendRequest(final WFCMessage.FriendRequest request) {
-        mScheduler.execute(()->{
             Connection connection = null;
             PreparedStatement statement = null;
             try {
@@ -2025,11 +2111,9 @@ public class DatabaseStore {
             } finally {
                 DBUtil.closeDB(connection, statement);
             }
-        });
     }
 
     void persistOrUpdateFriendData(final FriendData request) {
-        mScheduler.execute(()->{
             Connection connection = null;
             PreparedStatement statement = null;
             try {
@@ -2060,7 +2144,6 @@ public class DatabaseStore {
             } finally {
                 DBUtil.closeDB(connection, statement);
             }
-        });
     }
 
     boolean removeGroupInfoFromDB(String groupId) {

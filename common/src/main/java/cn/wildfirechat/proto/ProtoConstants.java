@@ -87,6 +87,10 @@ public class ProtoConstants {
         int Modify_Group_Name = 0;
         int Modify_Group_Portrait = 1;
         int Modify_Group_Extra = 2;
+        int Modify_Group_Mute = 3;
+        int Modify_Group_JoinType = 4;
+        int Modify_Group_PrivateChat = 5;
+        int Modify_Group_Searchable = 6;
     }
 
     //ModifyGroupInfoRequest -> type
@@ -137,5 +141,12 @@ public class ProtoConstants {
     public static final int MESSAGE_CONTENT_TYPE_CHANGE_GROUP_NAME = 110;
     public static final int MESSAGE_CONTENT_TYPE_MODIFY_GROUP_ALIAS = 111;
     public static final int MESSAGE_CONTENT_TYPE_CHANGE_GROUP_PORTRAIT = 112;
+
+    public static final int MESSAGE_CONTENT_TYPE_CHANGE_MUTE = 113;
+    public static final int MESSAGE_CONTENT_TYPE_CHANGE_JOINTYPE = 114;
+    public static final int MESSAGE_CONTENT_TYPE_CHANGE_PRIVATECHAT = 115;
+    public static final int MESSAGE_CONTENT_TYPE_CHANGE_SEARCHABLE = 116;
+
+    public static final int MESSAGE_CONTENT_TYPE_SET_MANAGER = 117;
 }
 

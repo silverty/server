@@ -60,13 +60,6 @@ public final class BrokerConstants {
     public static final String NETTY_SO_KEEPALIVE_PROPERTY_NAME = "netty.so_keepalive";
     public static final String NETTY_CHANNEL_TIMEOUT_SECONDS_PROPERTY_NAME = "netty.channel_timeout.seconds";
     public static final String NETTY_EPOLL_PROPERTY_NAME = "netty.epoll";
-    public static final String METRICS_ENABLE_PROPERTY_NAME = "use_metrics";
-    public static final String METRICS_LIBRATO_EMAIL_PROPERTY_NAME = "metrics.librato.email";
-    public static final String METRICS_LIBRATO_TOKEN_PROPERTY_NAME = "metrics.librato.token";
-    public static final String METRICS_LIBRATO_SOURCE_PROPERTY_NAME = "metrics.librato.source";
-
-    public static final String BUGSNAG_ENABLE_PROPERTY_NAME = "use_bugsnag";
-    public static final String BUGSNAG_TOKEN_PROPERTY_NAME = "bugsnag.token";
 
     public static final String STORAGE_CLASS_NAME = "storage_class";
 
@@ -103,7 +96,7 @@ public final class BrokerConstants {
     public static final String HTTP_SERVER_API_NO_CHECK_TIME = "http.admin.no_check_time";
 
     public static final String CLIENT_PROTO_SECRET_KEY = "client.proto.secret_key";
-    public static final String TOKEN_SECRET_KEY = "token.key ";
+    public static final String TOKEN_SECRET_KEY = "token.key";
 
     public static final String EMBED_DB_PROPERTY_NAME = "embed.db";
 
@@ -113,6 +106,7 @@ public final class BrokerConstants {
 
     public static final String MESSAGE_Forward_Url = "message.forward.url";
 
+    public static final String MESSAGE_ROAMING = "message.roaming";
 
 
     private BrokerConstants() {

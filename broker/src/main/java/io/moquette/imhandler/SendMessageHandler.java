@@ -46,6 +46,10 @@ public class SendMessageHandler extends IMHandler<WFCMessage.Message> {
         ErrorCode errorCode = ErrorCode.ERROR_CODE_SUCCESS;
         if (message != null) {
             if (!isAdmin) {  //admin do not check the right
+                // 不能在端上直接发送撤回和群通知
+                if (message.getContent().getType() == 80 || (message.getContent().getType() >= 100 && message.getContent().getType() < 200)) {
+                    return ErrorCode.INVALID_PARAMETER;
+                }
                 int userStatus = m_messagesStore.getUserStatus(fromUser);
                 if (userStatus == 1 || userStatus == 2) {
                     return ErrorCode.ERROR_CODE_FORBIDDEN_SEND_MSG;
@@ -58,14 +62,19 @@ public class SendMessageHandler extends IMHandler<WFCMessage.Message> {
                 }
 
 
-                if (message.getConversation().getType() == ProtoConstants.ConversationType.ConversationType_Group && !m_messagesStore.isMemberInGroup(fromUser, message.getConversation().getTarget())) {
-                    return ErrorCode.ERROR_CODE_NOT_IN_GROUP;
-                } else if (message.getConversation().getType() == ProtoConstants.ConversationType.ConversationType_Group && m_messagesStore.isForbiddenInGroup(fromUser, message.getConversation().getTarget())) {
-                    return ErrorCode.ERROR_CODE_NOT_RIGHT;
-                } else if (message.getConversation().getType() == ProtoConstants.ConversationType.ConversationType_ChatRoom && !m_messagesStore.checkUserClientInChatroom(fromUser, clientID, message.getConversation().getTarget())) {
-                    return ErrorCode.ERROR_CODE_NOT_IN_CHATROOM;
-                } else if (message.getConversation().getType() == ProtoConstants.ConversationType.ConversationType_Channel && !m_messagesStore.checkUserInChannel(fromUser, message.getConversation().getTarget())) {
-                    return ErrorCode.ERROR_CODE_NOT_IN_CHANNEL;
+                if (message.getConversation().getType() == ProtoConstants.ConversationType.ConversationType_Group ) {
+                    errorCode = m_messagesStore.canSendMessageInGroup(fromUser, message.getConversation().getTarget());
+                    if (errorCode != ErrorCode.ERROR_CODE_SUCCESS) {
+                        return errorCode;
+                    }
+                } else if (message.getConversation().getType() == ProtoConstants.ConversationType.ConversationType_ChatRoom) {
+                    if(!m_messagesStore.checkUserClientInChatroom(fromUser, clientID, message.getConversation().getTarget())) {
+                        return ErrorCode.ERROR_CODE_NOT_IN_CHATROOM;
+                    }
+                } else if (message.getConversation().getType() == ProtoConstants.ConversationType.ConversationType_Channel) {
+                    if(!m_messagesStore.checkUserInChannel(fromUser, message.getConversation().getTarget())) {
+                        return ErrorCode.ERROR_CODE_NOT_IN_CHANNEL;
+                    }
                 }
             }
 

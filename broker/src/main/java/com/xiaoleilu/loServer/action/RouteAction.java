@@ -35,12 +35,15 @@ import java.util.concurrent.Executor;
 @HttpMethod("POST")
 public class RouteAction extends Action {
     private static final Logger LOG = LoggerFactory.getLogger(RouteAction.class);
+
     @Override
     public boolean action(Request request, Response response) {
         if (request.getNettyRequest() instanceof FullHttpRequest) {
 
             response.setContentType("application/octet-stream");
-            FullHttpRequest fullHttpRequest = (FullHttpRequest)request.getNettyRequest();
+            response.setHeader("Access-Control-Allow-Origin", "*");
+
+            FullHttpRequest fullHttpRequest = (FullHttpRequest) request.getNettyRequest();
             boolean b = false;
             if ("web".equalsIgnoreCase(fullHttpRequest.headers().get("p"))) {
                 b = true;
@@ -144,10 +147,14 @@ public class RouteAction extends Action {
 
     private void sendResponse(Response response, ErrorCode errorCode, byte[] contents, boolean base64Response) {
         response.setStatus(HttpResponseStatus.OK);
-        if(contents == null) {
+        if (contents == null) {
             ByteBuf ackPayload = Unpooled.buffer();
             ackPayload.ensureWritable(1).writeByte(errorCode.getCode());
-            response.setContent(ackPayload);
+            contents = ackPayload.array();
+        }
+        if (base64Response) {
+            byte[] base64Data = Base64.getEncoder().encode(contents);
+            response.setContent(base64Data);
         } else {
             response.setContent(contents);
         }

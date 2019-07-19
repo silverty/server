@@ -103,18 +103,20 @@ public interface IMessagesStore {
     WFCMessage.PullMessageResult loadRemoteMessages(String user, WFCMessage.Conversation conversation, long beforeUid, int count);
     long insertUserMessages(String sender, int conversationType, String target, int line, int messageContentType, String userId, long messageId);
     WFCMessage.GroupInfo createGroup(String operator, WFCMessage.GroupInfo groupInfo, List<WFCMessage.GroupMember> memberList);
-    ErrorCode addGroupMembers(String operator, String groupId, List<WFCMessage.GroupMember> memberList);
-    ErrorCode kickoffGroupMembers(String operator, String groupId, List<String> memberList);
+    ErrorCode addGroupMembers(String operator, boolean isAdmin, String groupId, List<WFCMessage.GroupMember> memberList);
+    ErrorCode kickoffGroupMembers(String operator, boolean isAdmin, String groupId, List<String> memberList);
     ErrorCode quitGroup(String operator, String groupId);
     ErrorCode dismissGroup(String operator, String groupId, boolean isAdmin);
-    ErrorCode modifyGroupInfo(String operator, String groupId, int modifyType, String value);
+    ErrorCode modifyGroupInfo(String operator, String groupId, int modifyType, String value, boolean isAdmin);
     ErrorCode modifyGroupAlias(String operator, String groupId, String alias);
     List<WFCMessage.GroupInfo> getGroupInfos(List<WFCMessage.UserRequest> requests);
     WFCMessage.GroupInfo getGroupInfo(String groupId);
     ErrorCode getGroupMembers(String groupId, long maxDt, List<WFCMessage.GroupMember> members);
+    WFCMessage.GroupMember getGroupMember(String groupId, String memberId);
     ErrorCode transferGroup(String operator, String groupId, String newOwner, boolean isAdmin);
+    ErrorCode setGroupManager(String operator, String groupId, int type, List<String> userList, boolean isAdmin);
     boolean isMemberInGroup(String member, String groupId);
-    boolean isForbiddenInGroup(String member, String groupId);
+    ErrorCode canSendMessageInGroup(String member, String groupId);
 
     ErrorCode recallMessage(long messageUid, String operatorId);
 
@@ -153,7 +155,7 @@ public interface IMessagesStore {
 
     ErrorCode saveAddFriendRequest(String userId, WFCMessage.AddFriendRequest request, long[] head);
     ErrorCode handleFriendRequest(String userId, WFCMessage.HandleFriendRequest request, WFCMessage.Message.Builder msgBuilder, long[] heads, boolean isAdmin);
-    ErrorCode deleteFriend(String userId, String friendUid);
+    ErrorCode deleteFriend(String userId, String friendUid, long[] head);
     ErrorCode blackUserRequest(String fromUser, String targetUserId, int status, long[] head);
     ErrorCode SyncFriendRequestUnread(String userId, long unreadDt, long[] head);
     boolean isBlacked(String fromUser, String userId);
