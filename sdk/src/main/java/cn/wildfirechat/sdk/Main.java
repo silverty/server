@@ -103,7 +103,7 @@ public class Main {
             System.exit(-1);
         }
 
-        IMResult<Void> resultVoid =UserAdmin.updateUserBlockStatus(userInfo.getUserId(), 1);
+        IMResult<Void> resultVoid =UserAdmin.updateUserBlockStatus(userInfo.getUserId(), 2);
         if (resultVoid != null && resultVoid.getErrorCode() == ErrorCode.ERROR_CODE_SUCCESS) {
             System.out.println("block user done");
         } else {
@@ -113,7 +113,7 @@ public class Main {
 
         IMResult<OutputUserStatus> resultCheckUserStatus = UserAdmin.checkUserBlockStatus(userInfo.getUserId());
         if (resultCheckUserStatus != null && resultCheckUserStatus.getErrorCode() == ErrorCode.ERROR_CODE_SUCCESS) {
-            if (resultCheckUserStatus.getResult().getStatus() == 1) {
+            if (resultCheckUserStatus.getResult().getStatus() == 2) {
                 System.out.println("check user status success");
             } else {
                 System.out.println("user status not correct");
@@ -128,7 +128,7 @@ public class Main {
         if (resultBlockStatusList != null && resultBlockStatusList.getErrorCode() == ErrorCode.ERROR_CODE_SUCCESS) {
             boolean success = false;
             for (InputOutputUserBlockStatus blockStatus : resultBlockStatusList.getResult().getStatusList()) {
-                if (blockStatus.getUserId().equals(userInfo.getUserId()) && blockStatus.getStatus() == 1) {
+                if (blockStatus.getUserId().equals(userInfo.getUserId()) && blockStatus.getStatus() == 2) {
                     System.out.println("get block list done");
                     success = true;
                     break;
@@ -294,7 +294,7 @@ public class Main {
 
 
         //初始化机器人API
-        RobotHttpUtils.init("http://localhost:18080", "robot1", "123456");
+        RobotHttpUtils.init("http://localhost", "robot1", "123456");
         //***********************************************
         //****  机器人API
         //***********************************************
@@ -313,7 +313,7 @@ public class Main {
             System.exit(-1);
         }
 
-        IMResult<InputOutputUserInfo> resultRobotGetUserInfo = RobotService.getUserInfo("user1");
+        IMResult<InputOutputUserInfo> resultRobotGetUserInfo = RobotService.getUserInfo("userId1");
         if (resultRobotGetUserInfo != null && resultRobotGetUserInfo.getErrorCode() == ErrorCode.ERROR_CODE_SUCCESS) {
             System.out.println("robot get user info success");
         } else {
